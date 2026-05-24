@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "icons.svg", "ketua.png"],
+      includeAssets: ["favicon.svg", "icons.svg", "ketuamgmp.png"],
       manifest: {
         name: "MGMP Matematika SMK Kab. Lumajang",
         short_name: "MGMP Matematika",

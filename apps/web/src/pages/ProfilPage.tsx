@@ -47,7 +47,7 @@ export function ProfilPage() {
               <div className="absolute inset-0 -z-10 translate-y-8 rounded-[32px] bg-black/20 blur-2xl dark:bg-black/45" />
               <img
                 className="relative w-full h-auto object-contain drop-shadow-[0_26px_45px_rgba(2,6,23,0.45)]"
-                src="/ketua.png"
+                src="/ketuamgmp.png?v=20260525"
                 alt="Ketua MGMP"
                 onError={(e) => {
                   e.currentTarget.onerror = null;
@@ -136,7 +136,7 @@ export function ProfilPage() {
                 <div className="absolute inset-0 -z-10 translate-y-8 rounded-[32px] bg-black/20 blur-2xl dark:bg-black/45" />
                 <img
                   className="relative w-full h-auto object-contain drop-shadow-[0_22px_40px_rgba(2,6,23,0.42)]"
-                  src="/ketua.png"
+                  src="/ketuamgmp.png?v=20260525"
                   alt="Ketua MGMP"
                   onError={(e) => {
                     e.currentTarget.onerror = null;
