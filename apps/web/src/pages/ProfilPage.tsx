@@ -3,6 +3,7 @@ import { Globe, Lightbulb, ListChecks, MessageCircle, Send, Target, Users } from
 import { api } from "@/api/client";
 import type { BoardMember } from "@/types";
 import { formatWA } from "@/lib/mgmp";
+import ketuaMgmpImage from "@/assets/ketuamgmp.png";
 
 function contactLinks(contact: string) {
   const raw = (contact || "").trim();
@@ -47,7 +48,7 @@ export function ProfilPage() {
               <div className="absolute inset-0 -z-10 translate-y-8 rounded-[32px] bg-black/20 blur-2xl dark:bg-black/45" />
               <img
                 className="relative w-full h-auto object-contain drop-shadow-[0_26px_45px_rgba(2,6,23,0.45)]"
-                src="/ketuamgmp.png?v=20260525"
+                src={ketuaMgmpImage}
                 alt="Ketua MGMP"
               />
               <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-white/20 bg-white/75 px-4 py-1.5 text-xs font-extrabold uppercase tracking-widest text-slate-700 shadow-sm backdrop-blur-sm dark:bg-white/10 dark:text-white/80">
@@ -132,7 +133,7 @@ export function ProfilPage() {
                 <div className="absolute inset-0 -z-10 translate-y-8 rounded-[32px] bg-black/20 blur-2xl dark:bg-black/45" />
                 <img
                   className="relative w-full h-auto object-contain drop-shadow-[0_22px_40px_rgba(2,6,23,0.42)]"
-                  src="/ketuamgmp.png?v=20260525"
+                  src={ketuaMgmpImage}
                   alt="Ketua MGMP"
                 />
                 <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-white/20 bg-white/75 px-4 py-1.5 text-xs font-extrabold uppercase tracking-widest text-slate-700 shadow-sm backdrop-blur-sm dark:bg-white/10 dark:text-white/80">
