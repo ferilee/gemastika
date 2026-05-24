@@ -1,0 +1,24 @@
+services:
+  app:
+    image: ghcr.io/ferilee/gemastika:latest
+    container_name: gemastika
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_PATH: /app/data/app.db
+      WEB_ORIGIN: https://gemastika.or.id
+      CORS_ORIGIN: https://gemastika.or.id
+      # Sesuaikan kredensial OAuth dan admin:
+      # GOOGLE_CLIENT_ID: ""
+      # GOOGLE_CLIENT_SECRET: ""
+      # GOOGLE_REDIRECT_URI: "https://gemastika.or.id/api/auth/google/callback"
+      # SESSION_SECRET: "ganti-dengan-secret-aman"
+      # ADMIN_EMAILS: "email1@domain.com,email2@domain.com"
+    volumes:
+      - sqlite_data:/app/data
+
+volumes:
+  sqlite_data:
