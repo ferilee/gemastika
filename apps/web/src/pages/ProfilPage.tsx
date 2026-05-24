@@ -49,10 +49,6 @@ export function ProfilPage() {
                 className="relative w-full h-auto object-contain drop-shadow-[0_26px_45px_rgba(2,6,23,0.45)]"
                 src="/ketuamgmp.png?v=20260525"
                 alt="Ketua MGMP"
-                onError={(e) => {
-                  e.currentTarget.onerror = null;
-                  e.currentTarget.src = "https://freeimghost.com/images/2025/12/31/Ferilee-seragam-khaki.jpg";
-                }}
               />
               <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-white/20 bg-white/75 px-4 py-1.5 text-xs font-extrabold uppercase tracking-widest text-slate-700 shadow-sm backdrop-blur-sm dark:bg-white/10 dark:text-white/80">
                 Ketua MGMP
@@ -138,10 +134,6 @@ export function ProfilPage() {
                   className="relative w-full h-auto object-contain drop-shadow-[0_22px_40px_rgba(2,6,23,0.42)]"
                   src="/ketuamgmp.png?v=20260525"
                   alt="Ketua MGMP"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = "https://freeimghost.com/images/2025/12/31/Ferilee-seragam-khaki.jpg";
-                  }}
                 />
                 <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-white/20 bg-white/75 px-4 py-1.5 text-xs font-extrabold uppercase tracking-widest text-slate-700 shadow-sm backdrop-blur-sm dark:bg-white/10 dark:text-white/80">
                   Ketua MGMP
