@@ -1,0 +1,20 @@
+{
+  "name": "mgmp-matematika-lumajang",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,server -c auto \"cd apps/web && bun run dev\" \"cd apps/server && bun run dev\"",
+    "build": "cd apps/web && bun run build && cd ../server && bun run build",
+    "test:server": "cd apps/server && bun run test",
+    "check:server": "cd apps/server && bun run test && bun run build",
+    "start": "cd apps/server && bun run start",
+    "db:generate": "cd apps/server && bun run db:generate",
+    "db:migrate": "cd apps/server && bun run db:migrate",
+    "db:studio": "cd apps/server && bun run db:studio"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

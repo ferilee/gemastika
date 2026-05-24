@@ -1,0 +1,30 @@
+node_modules
+.DS_Store
+.env
+.env.*
+*.env
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+*.log
+
+# Vite
+apps/web/dist
+apps/web/node_modules
+
+# Server
+apps/server/node_modules
+apps/server/dist
+apps/server/data
+apps/server/.env
+
+# SQLite file (docker volume or local dev)
+data

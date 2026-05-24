@@ -1,0 +1,1061 @@
+import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "@hono/zod-validator";
+import { and, asc, desc, eq, like, or, sql } from "drizzle-orm";
+import type { Db } from "../db/client";
+import { agendas, attendances, boardMembers, comments, homeQuickLinks, homeSettings, members, news, portfolioRatings, portfolios, reactions } from "../db/schema";
+import { getSession } from "../auth/session";
+import { getEnv } from "../env";
+
+const ROLE_VALUES = ["admin", "pengurus", "anggota"] as const;
+type RoleValue = (typeof ROLE_VALUES)[number];
+const MEMBERSHIP_VALUES = ["pending", "approved", "rejected"] as const;
+type MembershipStatus = (typeof MEMBERSHIP_VALUES)[number];
+type SchoolItem = { name: string; city: string; province: string };
+const SCHOOL_CACHE_TTL_MS = 1000 * 60 * 30;
+const ATTENDANCE_XP_DEFAULT = 10;
+const PUBLISH_VALUES = ["pending", "approved", "rejected"] as const;
+type PublishStatus = (typeof PUBLISH_VALUES)[number];
+const schoolCache = new Map<string, { expiresAt: number; items: SchoolItem[] }>();
+const SCHOOL_FALLBACK: SchoolItem[] = [
+  { name: "SMK Negeri 1 Lumajang", city: "Kab. Lumajang", province: "Jawa Timur" },
+  { name: "SMK Negeri 2 Lumajang", city: "Kab. Lumajang", province: "Jawa Timur" },
+  { name: "SMK Negeri Pasirian", city: "Kab. Lumajang", province: "Jawa Timur" },
+  { name: "SMK Negeri 1 Jember", city: "Kab. Jember", province: "Jawa Timur" },
+  { name: "SMK Negeri 1 Malang", city: "Kota Malang", province: "Jawa Timur" },
+  { name: "SMK Negeri 2 Surabaya", city: "Kota Surabaya", province: "Jawa Timur" },
+  { name: "SMK Negeri 1 Bandung", city: "Kota Bandung", province: "Jawa Barat" },
+  { name: "SMK Negeri 1 Jakarta", city: "Kota Jakarta Pusat", province: "DKI Jakarta" },
+  { name: "SMK Negeri Pasirian", city: "Kab. Lumajang", province: "Jawa Timur" },
+  { name: "SMK Negeri Klakah", city: "Kab. Lumajang", province: "Jawa Timur" },
+  { name: "SMK Muhammadiyah Lumajang", city: "Kab. Lumajang", province: "Jawa Timur" },
+  { name: "SMK Negeri 3 Malang", city: "Kota Malang", province: "Jawa Timur" },
+  { name: "SMK Negeri 4 Malang", city: "Kota Malang", province: "Jawa Timur" },
+  { name: "SMK Negeri 1 Kediri", city: "Kota Kediri", province: "Jawa Timur" },
+  { name: "SMK Negeri 2 Kediri", city: "Kota Kediri", province: "Jawa Timur" },
+  { name: "SMK Negeri 1 Jombang", city: "Kab. Jombang", province: "Jawa Timur" },
+  { name: "SMK Negeri 1 Sidoarjo", city: "Kab. Sidoarjo", province: "Jawa Timur" },
+  { name: "SMK Negeri 2 Sidoarjo", city: "Kab. Sidoarjo", province: "Jawa Timur" },
+  { name: "SMK Negeri 1 Gresik", city: "Kab. Gresik", province: "Jawa Timur" },
+  { name: "SMK Negeri 1 Banyuwangi", city: "Kab. Banyuwangi", province: "Jawa Timur" }
+];
+
+function normalizeSchoolText(raw: string) {
+  return raw
+    .toLowerCase()
+    .replace(/\bsmkn\b/g, "smk negeri")
+    .replace(/\bsmks\b/g, "smk swasta")
+    .replace(/\bsman\b/g, "sma negeri")
+    .replace(/\bsman\b/g, "sma negeri")
+    .replace(/\bsmpn\b/g, "smp negeri")
+    .replace(/\bsd n\b/g, "sd negeri")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreSchool(item: SchoolItem, query: string) {
+  const searchable = normalizeSchoolText([item.name, item.city, item.province].join(" "));
+  const q = normalizeSchoolText(query);
+  if (!q) return 0;
+  const tokens = q.split(" ").filter(Boolean);
+  let score = 0;
+  if (searchable.startsWith(q)) score += 120;
+  if (searchable.includes(q)) score += 90;
+  for (const token of tokens) {
+    if (token.length < 2) continue;
+    if (searchable.includes(token)) score += 22;
+    if (normalizeSchoolText(item.name).includes(token)) score += 14;
+    if (normalizeSchoolText(item.city).includes(token)) score += 10;
+    if (normalizeSchoolText(item.province).includes(token)) score += 8;
+  }
+  // Prefer SMK for MGMP Matematika SMK context.
+  if (normalizeSchoolText(item.name).includes("smk")) score += 6;
+  return score;
+}
+
+function rankSchools(items: SchoolItem[], query: string) {
+  const seen = new Set<string>();
+  const deduped: SchoolItem[] = [];
+  for (const item of items) {
+    const key = `${item.name}|${item.city}|${item.province}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped
+    .map((item) => ({ item, score: scoreSchool(item, query) }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name))
+    .map((row) => row.item)
+    .slice(0, 25);
+}
+
+function parseRoles(raw: string): RoleValue[] {
+  const parts = (raw || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const out: RoleValue[] = [];
+  for (const p of parts) {
+    if ((ROLE_VALUES as readonly string[]).includes(p) && !out.includes(p as RoleValue)) out.push(p as RoleValue);
+  }
+  return out.length ? out : ["anggota"];
+}
+
+function primaryRole(roles: RoleValue[]): RoleValue {
+  return roles.includes("admin") ? "admin" : roles.includes("pengurus") ? "pengurus" : "anggota";
+}
+
+function hasRole(roles: RoleValue[], role: RoleValue) {
+  return roles.includes(role);
+}
+
+function parseMembershipStatus(raw: string | undefined): MembershipStatus {
+  const value = (raw || "").trim().toLowerCase();
+  if (value === "pending" || value === "rejected") return value;
+  return "approved";
+}
+
+function parsePublishStatus(raw: string | undefined): PublishStatus {
+  const value = (raw || "").trim().toLowerCase();
+  if (value === "pending" || value === "rejected") return value;
+  return "approved";
+}
+
+function filterFallbackSchools(query: string) {
+  return rankSchools(SCHOOL_FALLBACK, query);
+}
+
+function normalizeWa(raw: string) {
+  const digits = raw.replace(/[^\d+]/g, "");
+  if (!digits) return "";
+  return digits;
+}
+
+function isValidWa(raw: string) {
+  const cleaned = raw.replace(/[^\d]/g, "");
+  return cleaned.length >= 10 && cleaned.length <= 16;
+}
+
+function normalizeTelegram(raw: string) {
+  const v = raw.trim();
+  if (!v) return "";
+  return v.startsWith("@") ? v : `@${v}`;
+}
+
+function isValidTelegram(raw: string) {
+  const value = raw.trim().replace(/^@/, "");
+  return /^[a-zA-Z0-9_]{5,32}$/.test(value);
+}
+
+export function apiRouter(db: Db) {
+  const api = new Hono().basePath("/api");
+
+  api.get("/health", (c) => c.json({ ok: true }));
+
+  api.get("/comments", async (c) => {
+    const targetType = (c.req.query("targetType") || "").trim().toLowerCase();
+    const targetId = Number(c.req.query("targetId") || 0);
+    if (!["news", "portfolio"].includes(targetType) || !targetId) return c.json([]);
+    const rows = await db
+      .select()
+      .from(comments)
+      .where(and(eq(comments.targetType, targetType as "news" | "portfolio"), eq(comments.targetId, targetId)))
+      .orderBy(asc(comments.createdAt), asc(comments.id));
+    return c.json(rows);
+  });
+
+  api.get("/reactions", async (c) => {
+    const targetType = (c.req.query("targetType") || "").trim().toLowerCase();
+    const targetId = Number(c.req.query("targetId") || 0);
+    if (!["news", "portfolio"].includes(targetType)) return c.json([]);
+
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const userKey = (session?.email || session?.sub || "").trim().toLowerCase();
+
+    const rows = await db
+      .select({ targetId: reactions.targetId, reaction: reactions.reaction, userKey: reactions.userKey })
+      .from(reactions)
+      .where(
+        and(
+          eq(reactions.targetType, targetType as "news" | "portfolio"),
+          targetId ? eq(reactions.targetId, targetId) : undefined
+        )
+      );
+
+    const map = new Map<string, { targetId: number; reaction: string; count: number; reacted: boolean }>();
+    for (const row of rows) {
+      const key = `${row.targetId}::${row.reaction}`;
+      const prev = map.get(key) || { targetId: row.targetId, reaction: row.reaction, count: 0, reacted: false };
+      prev.count += 1;
+      if (userKey && row.userKey === userKey) prev.reacted = true;
+      map.set(key, prev);
+    }
+    return c.json(Array.from(map.values()));
+  });
+
+  api.post(
+    "/comments",
+    zValidator(
+      "json",
+      z.object({
+        targetType: z.enum(["news", "portfolio"]),
+        targetId: z.number().int().positive(),
+        parentId: z.number().int().positive().nullable().optional(),
+        content: z.string().min(2).max(2000)
+      })
+    ),
+    async (c) => {
+      const body = c.req.valid("json");
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      if (!session) return c.json({ error: "Silakan masuk untuk berkomentar." }, 401);
+      const email = (session?.email || "").trim().toLowerCase();
+      const member = email ? await db.select().from(members).where(eq(members.email, email)).get() : null;
+      const authorName = (member?.name || session?.name || "Pengguna").trim() || "Pengguna";
+
+      if (body.targetType === "news") {
+        const exists = await db.select({ id: news.id }).from(news).where(eq(news.id, body.targetId)).get();
+        if (!exists) return c.json({ error: "Berita tidak ditemukan." }, 404);
+      } else {
+        const exists = await db.select({ id: portfolios.id }).from(portfolios).where(eq(portfolios.id, body.targetId)).get();
+        if (!exists) return c.json({ error: "Portofolio tidak ditemukan." }, 404);
+      }
+
+      if (body.parentId) {
+        const parent = await db.select().from(comments).where(eq(comments.id, body.parentId)).get();
+        if (!parent || parent.targetType !== body.targetType || parent.targetId !== body.targetId) {
+          return c.json({ error: "Komentar induk tidak valid." }, 400);
+        }
+      }
+
+      const [inserted] = await db
+        .insert(comments)
+        .values({
+          targetType: body.targetType,
+          targetId: body.targetId,
+          parentId: body.parentId ?? null,
+          content: body.content.trim(),
+          authorName,
+          authorEmail: email
+        })
+        .returning();
+      return c.json(inserted, 201);
+    }
+  );
+
+  api.post(
+    "/reactions/toggle",
+    zValidator(
+      "json",
+      z.object({
+        targetType: z.enum(["news", "portfolio"]),
+        targetId: z.number().int().positive(),
+        reaction: z.string().min(1).max(16)
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      if (!session) return c.json({ error: "Silakan masuk untuk memberi reaksi." }, 401);
+      const userKey = (session.email || session.sub || "").trim().toLowerCase();
+      if (!userKey) return c.json({ error: "Identitas akun tidak valid." }, 400);
+
+      const body = c.req.valid("json");
+      if (body.targetType === "news") {
+        const exists = await db.select({ id: news.id }).from(news).where(eq(news.id, body.targetId)).get();
+        if (!exists) return c.json({ error: "Berita tidak ditemukan." }, 404);
+      } else {
+        const exists = await db.select({ id: portfolios.id }).from(portfolios).where(eq(portfolios.id, body.targetId)).get();
+        if (!exists) return c.json({ error: "Portofolio tidak ditemukan." }, 404);
+      }
+
+      const existing = await db
+        .select()
+        .from(reactions)
+        .where(
+          and(
+            eq(reactions.targetType, body.targetType),
+            eq(reactions.targetId, body.targetId),
+            eq(reactions.reaction, body.reaction),
+            eq(reactions.userKey, userKey)
+          )
+        )
+        .get();
+
+      if (existing) {
+        await db.delete(reactions).where(eq(reactions.id, existing.id));
+        return c.json({ active: false });
+      }
+
+      await db.insert(reactions).values({
+        targetType: body.targetType,
+        targetId: body.targetId,
+        reaction: body.reaction,
+        userKey
+      });
+      return c.json({ active: true });
+    }
+  );
+
+  api.get("/portfolio-ratings", async (c) => {
+    const portfolioId = Number(c.req.query("portfolioId") || 0);
+    if (!portfolioId) return c.json({ average: 0, count: 0, myRating: 0 });
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const userKey = (session?.email || session?.sub || "").trim().toLowerCase();
+
+    const rows = await db.select().from(portfolioRatings).where(eq(portfolioRatings.portfolioId, portfolioId));
+    const count = rows.length;
+    const total = rows.reduce((sum, row) => sum + row.rating, 0);
+    const average = count ? Number((total / count).toFixed(2)) : 0;
+    const myRating = userKey ? rows.find((row) => row.userKey === userKey)?.rating || 0 : 0;
+    return c.json({ average, count, myRating });
+  });
+
+  api.post(
+    "/portfolio-ratings",
+    zValidator(
+      "json",
+      z.object({
+        portfolioId: z.number().int().positive(),
+        rating: z.number().int().min(1).max(5)
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      if (!session) return c.json({ error: "Silakan masuk untuk memberi rating." }, 401);
+      const userKey = (session.email || session.sub || "").trim().toLowerCase();
+      if (!userKey) return c.json({ error: "Identitas akun tidak valid." }, 400);
+      const body = c.req.valid("json");
+      const exists = await db.select({ id: portfolios.id }).from(portfolios).where(eq(portfolios.id, body.portfolioId)).get();
+      if (!exists) return c.json({ error: "Portofolio tidak ditemukan." }, 404);
+
+      await db
+        .insert(portfolioRatings)
+        .values({ portfolioId: body.portfolioId, userKey, rating: body.rating })
+        .onConflictDoUpdate({
+          target: [portfolioRatings.portfolioId, portfolioRatings.userKey],
+          set: { rating: body.rating }
+        });
+
+      const rows = await db.select().from(portfolioRatings).where(eq(portfolioRatings.portfolioId, body.portfolioId));
+      const count = rows.length;
+      const total = rows.reduce((sum, row) => sum + row.rating, 0);
+      const average = count ? Number((total / count).toFixed(2)) : 0;
+      return c.json({ average, count, myRating: body.rating });
+    }
+  );
+
+  api.get("/home-content", async (c) => {
+    const quickLinks = await db.select().from(homeQuickLinks).orderBy(asc(homeQuickLinks.sortOrder), asc(homeQuickLinks.id));
+    const settings = await db
+      .select({ key: homeSettings.key, value: homeSettings.value })
+      .from(homeSettings)
+      .where(or(eq(homeSettings.key, "home_quote_text"), eq(homeSettings.key, "home_quote_author")));
+    const map = new Map(settings.map((s) => [s.key, s.value]));
+    return c.json({
+      quickLinks,
+      quote: {
+        text: map.get("home_quote_text") || "Mathematics is the language with which God has written the universe.",
+        author: map.get("home_quote_author") || "Galileo Galilei"
+      }
+    });
+  });
+
+  api.post(
+    "/admin/home-content",
+    zValidator(
+      "json",
+      z.object({
+        quickLinks: z.array(
+          z.object({
+            title: z.string().min(3),
+            subtitle: z.string().min(2),
+            href: z.string().min(1)
+          })
+        ),
+        quote: z.object({
+          text: z.string().min(8),
+          author: z.string().min(3)
+        })
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+      if (!session || !sessionRoles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
+
+      const payload = c.req.valid("json");
+      const quickLinks = payload.quickLinks
+        .map((item, index) => ({
+          title: item.title.trim(),
+          subtitle: item.subtitle.trim(),
+          href: item.href.trim() || "/",
+          sortOrder: index + 1
+        }))
+        .filter((item) => item.title.length >= 3 && item.subtitle.length >= 2);
+
+      await db.transaction(async (tx) => {
+        await tx.delete(homeQuickLinks);
+        if (quickLinks.length) await tx.insert(homeQuickLinks).values(quickLinks);
+
+        await tx
+          .insert(homeSettings)
+          .values({ key: "home_quote_text", value: payload.quote.text.trim() })
+          .onConflictDoUpdate({ target: homeSettings.key, set: { value: payload.quote.text.trim() } });
+        await tx
+          .insert(homeSettings)
+          .values({ key: "home_quote_author", value: payload.quote.author.trim() })
+          .onConflictDoUpdate({ target: homeSettings.key, set: { value: payload.quote.author.trim() } });
+      });
+
+      const updatedQuickLinks = await db.select().from(homeQuickLinks).orderBy(asc(homeQuickLinks.sortOrder), asc(homeQuickLinks.id));
+      return c.json({
+        quickLinks: updatedQuickLinks,
+        quote: { text: payload.quote.text.trim(), author: payload.quote.author.trim() }
+      });
+    }
+  );
+
+  api.get("/members", async (c) => {
+    const q = (c.req.query("q") || "").trim().toLowerCase();
+    const role = (c.req.query("role") || "").trim().toLowerCase();
+    const rows = await db
+      .select()
+      .from(members)
+      .where(
+        and(
+          q
+            ? or(
+                like(members.name, `%${q}%`),
+                like(members.school, `%${q}%`),
+                like(members.role, `%${q}%`),
+                like(members.roles, `%${q}%`)
+              )
+            : undefined,
+          role && ["admin", "pengurus", "anggota"].includes(role) ? eq(members.role, role as "admin" | "pengurus" | "anggota") : undefined
+        )
+      )
+      .orderBy(asc(members.role), asc(members.name));
+    const out = rows.map((r) => {
+      const roles = parseRoles(r.roles || r.role);
+      return { ...r, role: primaryRole(roles), roles };
+    });
+    return c.json(out);
+  });
+
+  api.get("/members/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    const row = await db.select().from(members).where(eq(members.id, id)).get();
+    if (!row) return c.json({ error: "Not found" }, 404);
+    const roles = parseRoles(row.roles || row.role);
+    return c.json({ ...row, role: primaryRole(roles), roles });
+  });
+
+  api.post(
+    "/admin/members/:id/roles",
+    zValidator(
+      "json",
+      z.object({
+        roles: z.array(z.enum(ROLE_VALUES)).min(1)
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+      if (!session || !sessionRoles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
+
+      const id = Number(c.req.param("id"));
+      const { roles } = c.req.valid("json");
+      const normalized = Array.from(new Set(roles.map((r) => r.toLowerCase() as RoleValue)));
+      const csv = normalized.join(",");
+      const primary = primaryRole(normalized);
+
+      await db.update(members).set({ roles: csv, role: primary }).where(eq(members.id, id));
+      const updated = await db.select().from(members).where(eq(members.id, id)).get();
+      if (!updated) return c.json({ error: "Not found" }, 404);
+      const rolesList = parseRoles(updated.roles || updated.role);
+      return c.json({ ...updated, role: primaryRole(rolesList), roles: rolesList });
+    }
+  );
+
+  api.post(
+    "/admin/members/:id/approval",
+    zValidator(
+      "json",
+      z.object({
+        status: z.enum(MEMBERSHIP_VALUES)
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+      if (!session || (!sessionRoles.includes("admin") && !sessionRoles.includes("pengurus"))) return c.json({ error: "Forbidden" }, 403);
+
+      const id = Number(c.req.param("id"));
+      const { status } = c.req.valid("json");
+      const existing = await db.select().from(members).where(eq(members.id, id)).get();
+      if (!existing) return c.json({ error: "Not found" }, 404);
+
+      const prevStatus = parseMembershipStatus(existing.membershipStatus);
+      const patch: Partial<typeof existing> = {
+        membershipStatus: status
+      };
+
+      if (status === "approved") {
+        patch.approvedAt = new Date().toISOString();
+        if (prevStatus !== "approved") {
+          patch.xp = (existing.xp || 0) + 10;
+          patch.newMemberBadge = 1;
+          patch.newMemberBadgeSeen = 0;
+        }
+      }
+
+      await db.update(members).set(patch).where(eq(members.id, id));
+      const updated = await db.select().from(members).where(eq(members.id, id)).get();
+      if (!updated) return c.json({ error: "Not found" }, 404);
+      const rolesList = parseRoles(updated.roles || updated.role);
+      return c.json({ ...updated, role: primaryRole(rolesList), roles: rolesList });
+    }
+  );
+
+  api.delete("/admin/members/:id", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !sessionRoles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
+
+    const id = Number(c.req.param("id"));
+    const member = await db.select().from(members).where(eq(members.id, id)).get();
+    if (!member) return c.json({ error: "Not found" }, 404);
+    if ((member.email || "").trim().toLowerCase() === (session.email || "").trim().toLowerCase()) {
+      return c.json({ error: "Tidak dapat menghapus akun sendiri." }, 400);
+    }
+    await db.delete(members).where(eq(members.id, id));
+    return c.json({ ok: true });
+  });
+
+  api.get("/profile/me", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    if (!session) return c.json({ error: "Unauthorized" }, 401);
+
+    const email = (session.email || "").trim().toLowerCase();
+    if (!email) return c.json({ registered: false, member: null });
+    const member = await db.select().from(members).where(eq(members.email, email)).get();
+    if (!member) return c.json({ registered: false, member: null });
+    const roles = parseRoles(member.roles || member.role);
+    const registered = member.name.trim().length >= 3 && member.school.trim().length >= 3 && (!!member.wa.trim() || !!member.telegram.trim());
+    return c.json({ registered, member: { ...member, role: primaryRole(roles), roles } });
+  });
+
+  api.post(
+    "/profile/me",
+    zValidator(
+      "json",
+      z.object({
+        name: z.string().min(3),
+        school: z.string().min(3),
+        wa: z.string().trim().default(""),
+        telegram: z.string().trim().default(""),
+        photoUrl: z.string().url().or(z.literal("")).default(""),
+        profileUrl: z.string().url().or(z.literal("")).default("")
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      if (!session) return c.json({ error: "Unauthorized" }, 401);
+      const email = (session.email || "").trim().toLowerCase();
+      if (!email) return c.json({ error: "Email akun tidak tersedia" }, 400);
+
+      const body = c.req.valid("json");
+      const wa = normalizeWa(body.wa);
+      const telegram = normalizeTelegram(body.telegram);
+      if (!wa && !telegram) return c.json({ error: "Isi minimal WhatsApp atau Telegram" }, 400);
+      if (wa && !isValidWa(wa)) return c.json({ error: "Format WhatsApp tidak valid" }, 400);
+      if (telegram && !isValidTelegram(telegram)) return c.json({ error: "Format username Telegram tidak valid" }, 400);
+      const photoUrl = body.photoUrl.trim();
+      const profileUrl = body.profileUrl.trim();
+
+      const existing = await db.select().from(members).where(eq(members.email, email)).get();
+      const shouldAutoApprove = env.adminEmails.includes(email);
+      if (existing) {
+        const mergedRoles = parseRoles(existing.roles || existing.role);
+        const primary = primaryRole(mergedRoles);
+        const status: MembershipStatus = shouldAutoApprove ? "approved" : parseMembershipStatus(existing.membershipStatus);
+        await db
+          .update(members)
+          .set({
+            name: body.name,
+            school: body.school,
+            wa,
+            telegram,
+            photoUrl,
+            profileUrl,
+            role: primary,
+            roles: mergedRoles.join(","),
+            membershipStatus: status,
+            approvedAt: status === "approved" ? existing.approvedAt || new Date().toISOString() : ""
+          })
+          .where(eq(members.id, existing.id));
+      } else {
+        const status: MembershipStatus = shouldAutoApprove ? "approved" : "pending";
+        await db.insert(members).values({
+          name: body.name,
+          email,
+          school: body.school,
+          wa,
+          telegram,
+          photoUrl,
+          profileUrl,
+          role: "anggota",
+          roles: "anggota",
+          membershipStatus: status,
+          approvedAt: status === "approved" ? new Date().toISOString() : ""
+        });
+      }
+
+      const updated = await db.select().from(members).where(eq(members.email, email)).get();
+      if (!updated) return c.json({ error: "Gagal menyimpan profil" }, 500);
+      const roles = parseRoles(updated.roles || updated.role);
+      return c.json({ registered: true, member: { ...updated, role: primaryRole(roles), roles } });
+    }
+  );
+
+  api.post("/profile/me/badge-ack", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    if (!session) return c.json({ error: "Unauthorized" }, 401);
+    const email = (session.email || "").trim().toLowerCase();
+    if (!email) return c.json({ error: "Email akun tidak tersedia" }, 400);
+    const existing = await db.select().from(members).where(eq(members.email, email)).get();
+    if (!existing) return c.json({ ok: true });
+    await db.update(members).set({ newMemberBadgeSeen: 1 }).where(eq(members.id, existing.id));
+    return c.json({ ok: true });
+  });
+
+  api.get("/schools", async (c) => {
+    const q = (c.req.query("q") || "").trim();
+    if (q.length < 2) return c.json({ items: [] });
+    const cacheKey = q.toLowerCase();
+    const now = Date.now();
+    const fromCache = schoolCache.get(cacheKey);
+    if (fromCache && fromCache.expiresAt > now) return c.json({ items: fromCache.items, source: "cache" });
+
+    try {
+      const res = await fetch(`https://api-sekolah-indonesia.vercel.app/sekolah?q=${encodeURIComponent(q)}`);
+      if (!res.ok) {
+        const fallback = filterFallbackSchools(q);
+        return c.json({ items: fallback, source: "fallback" });
+      }
+      const json = (await res.json()) as {
+        dataSekolah?: Array<{ sekolah?: string; kabupaten_kota?: string; propinsi?: string }>;
+      };
+      const items = (json.dataSekolah || [])
+        .map((s) => ({
+          name: (s.sekolah || "").trim(),
+          city: (s.kabupaten_kota || "").trim(),
+          province: (s.propinsi || "").trim()
+        }))
+        .filter((s) => s.name.length > 0)
+        .slice(0, 20);
+      const rankedRemote = rankSchools(items, q);
+      const rankedFallback = filterFallbackSchools(q);
+      const finalItems = [...rankedRemote, ...rankedFallback].slice(0, 25);
+      schoolCache.set(cacheKey, { expiresAt: now + SCHOOL_CACHE_TTL_MS, items: finalItems });
+      return c.json({ items: finalItems, source: rankedRemote.length ? "remote+ranked" : "fallback" });
+    } catch {
+      const fallback = filterFallbackSchools(q);
+      return c.json({ items: fallback, source: "fallback" });
+    }
+  });
+
+  api.get("/agendas", async (c) => {
+    const rows = await db.select().from(agendas).orderBy(asc(agendas.date), asc(agendas.time));
+    return c.json(rows);
+  });
+
+  api.post(
+    "/agendas",
+    zValidator(
+      "json",
+      z.object({
+        title: z.string().min(3),
+        date: z.string().min(10),
+        time: z.string().trim().default(""),
+        location: z.string().trim().default(""),
+        description: z.string().trim().default("")
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      const sessionRoles = parseRoles((session?.roles || []).join(",") || session?.role || "anggota");
+      if (!session || !hasRole(sessionRoles, "admin")) return c.json({ error: "Forbidden" }, 403);
+
+      const body = c.req.valid("json");
+      const [inserted] = await db.insert(agendas).values(body).returning();
+      return c.json(inserted, 201);
+    }
+  );
+
+  api.patch(
+    "/agendas/:id",
+    zValidator(
+      "json",
+      z.object({
+        title: z.string().min(3),
+        date: z.string().min(10),
+        time: z.string().trim().default(""),
+        location: z.string().trim().default(""),
+        description: z.string().trim().default("")
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      const sessionRoles = parseRoles((session?.roles || []).join(",") || session?.role || "anggota");
+      if (!session || !hasRole(sessionRoles, "admin")) return c.json({ error: "Forbidden" }, 403);
+
+      const id = Number(c.req.param("id"));
+      const body = c.req.valid("json");
+      await db.update(agendas).set(body).where(eq(agendas.id, id));
+      const updated = await db.select().from(agendas).where(eq(agendas.id, id)).get();
+      if (!updated) return c.json({ error: "Not found" }, 404);
+      return c.json(updated);
+    }
+  );
+
+  api.delete("/agendas/:id", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = parseRoles((session?.roles || []).join(",") || session?.role || "anggota");
+    if (!session || !hasRole(sessionRoles, "admin")) return c.json({ error: "Forbidden" }, 403);
+
+    const id = Number(c.req.param("id"));
+    await db.delete(agendas).where(eq(agendas.id, id));
+    return c.json({ ok: true });
+  });
+
+  api.get("/board", async (c) => {
+    const rows = await db.select().from(boardMembers).orderBy(asc(boardMembers.sortOrder), asc(boardMembers.id));
+    return c.json(rows);
+  });
+
+  api.post(
+    "/admin/board",
+    zValidator(
+      "json",
+      z.object({
+        items: z.array(
+          z.object({
+            memberId: z.number().int().positive(),
+            title: z.string().min(3),
+            contact: z.string().min(3)
+          })
+        )
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+      if (!session || !sessionRoles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
+
+      const { items } = c.req.valid("json");
+      const memberMap = new Map((await db.select({ id: members.id, name: members.name }).from(members)).map((m) => [m.id, m.name]));
+      await db.transaction(async (tx) => {
+        await tx.delete(boardMembers);
+        if (items.length) {
+          await tx.insert(boardMembers).values(
+            items.map((it, idx) => ({
+              memberId: it.memberId,
+              name: memberMap.get(it.memberId) || "Anggota",
+              title: it.title.trim(),
+              contact: it.contact.trim(),
+              sortOrder: idx + 1
+            }))
+          );
+        }
+      });
+
+      const rows = await db.select().from(boardMembers).orderBy(asc(boardMembers.sortOrder), asc(boardMembers.id));
+      return c.json(rows);
+    }
+  );
+
+  api.get("/agendas/:id/attendance", async (c) => {
+    const agendaId = Number(c.req.param("id"));
+    const rows = await db
+      .select({
+        id: attendances.id,
+        agendaId: attendances.agendaId,
+        memberId: attendances.memberId,
+        memberName: members.name,
+        memberSchool: members.school,
+        memberRole: members.role,
+        xpAwarded: attendances.xpAwarded,
+        createdAt: attendances.createdAt
+      })
+      .from(attendances)
+      .innerJoin(members, eq(attendances.memberId, members.id))
+      .where(eq(attendances.agendaId, agendaId))
+      .orderBy(desc(attendances.id));
+    return c.json(rows);
+  });
+
+  api.post(
+    "/agendas/:id/attendance",
+    zValidator(
+      "json",
+      z.object({
+        memberId: z.number().int().positive().optional(),
+        xp: z.number().int().min(0).max(1000).optional()
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      if (!session) return c.json({ error: "Unauthorized" }, 401);
+      const sessionRoles = parseRoles((session.roles || []).join(",") || session.role || "anggota");
+      const canManageAttendance = hasRole(sessionRoles, "admin") || hasRole(sessionRoles, "pengurus");
+
+      const agendaId = Number(c.req.param("id"));
+      const body = c.req.valid("json");
+      const xp = canManageAttendance ? (body.xp ?? ATTENDANCE_XP_DEFAULT) : ATTENDANCE_XP_DEFAULT;
+
+      let memberId = body.memberId ?? 0;
+      if (canManageAttendance) {
+        if (!memberId) return c.json({ error: "Member wajib dipilih" }, 400);
+      } else {
+        const email = (session.email || "").trim().toLowerCase();
+        if (!email) return c.json({ error: "Email akun tidak tersedia" }, 400);
+        const me = await db
+          .select({ id: members.id, membershipStatus: members.membershipStatus })
+          .from(members)
+          .where(eq(members.email, email))
+          .get();
+        if (!me) return c.json({ error: "Profil anggota belum terdaftar" }, 400);
+        if (parseMembershipStatus(me.membershipStatus) !== "approved") return c.json({ error: "Akses kehadiran khusus anggota aktif." }, 403);
+        memberId = me.id;
+      }
+
+      // Ensure agenda and member exist (fast checks).
+      const agenda = await db.select({ id: agendas.id }).from(agendas).where(eq(agendas.id, agendaId)).get();
+      if (!agenda) return c.json({ error: "Agenda not found" }, 404);
+      const member = await db.select({ id: members.id, xp: members.xp }).from(members).where(eq(members.id, memberId)).get();
+      if (!member) return c.json({ error: "Member not found" }, 404);
+
+      const result = await db.transaction(async (tx) => {
+        const existing = await tx
+          .select({ id: attendances.id, xpAwarded: attendances.xpAwarded })
+          .from(attendances)
+          .where(and(eq(attendances.agendaId, agendaId), eq(attendances.memberId, memberId)))
+          .get();
+
+        if (existing) {
+          const updatedMember = await tx.select().from(members).where(eq(members.id, memberId)).get();
+          return { already: true as const, attendance: existing, member: updatedMember };
+        }
+
+        const [inserted] = await tx
+          .insert(attendances)
+          .values({ agendaId, memberId, xpAwarded: xp })
+          .returning();
+
+        // Atomic increment
+        await tx.update(members).set({ xp: sql`${members.xp} + ${xp}` }).where(eq(members.id, memberId));
+        const updatedMember = await tx.select().from(members).where(eq(members.id, memberId)).get();
+        return { already: false as const, attendance: inserted, member: updatedMember };
+      });
+
+      return c.json(result, 201);
+    }
+  );
+
+  api.get("/news", async (c) => {
+    const q = (c.req.query("q") || "").trim().toLowerCase();
+    const category = (c.req.query("category") || "").trim().toLowerCase();
+    const includeAll = c.req.query("includeAll") === "1";
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    const canReview = sessionRoles.includes("admin") || sessionRoles.includes("pengurus");
+    const viewerEmail = (session?.email || "").trim().toLowerCase();
+    const visibilityWhere =
+      includeAll && canReview
+        ? undefined
+        : viewerEmail
+          ? or(eq(news.publishStatus, "approved"), and(eq(news.publishStatus, "pending"), eq(news.createdByEmail, viewerEmail)))
+          : eq(news.publishStatus, "approved");
+    const where = and(q ? like(news.title, `%${q}%`) : undefined, category && category !== "all" ? like(news.category, `%${category}%`) : undefined, visibilityWhere);
+    const rows = await db.select().from(news).where(where).orderBy(desc(news.date), desc(news.id));
+    return c.json(rows);
+  });
+
+  api.get("/news/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    const row = await db.select().from(news).where(eq(news.id, id)).get();
+    if (!row) return c.json({ error: "Not found" }, 404);
+    return c.json(row);
+  });
+
+  api.post(
+    "/news",
+    zValidator(
+      "json",
+      z.object({
+        title: z.string().min(3),
+        category: z.string().min(2).default("Umum"),
+        author: z.string().min(2).default("Admin"),
+        date: z.string().min(10),
+        imageUrl: z.string().url().or(z.literal("")).default(""),
+        summary: z.string().min(10),
+        content: z.string().min(10),
+        documentUrl: z.string().url().or(z.literal("")).default("")
+      })
+    ),
+    async (c) => {
+      const body = c.req.valid("json");
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      if (!session) return c.json({ error: "Unauthorized" }, 401);
+      const email = (session.email || "").trim().toLowerCase();
+      if (!email) return c.json({ error: "Forbidden" }, 403);
+      const me = await db.select().from(members).where(eq(members.email, email)).get();
+      const status = parseMembershipStatus(me?.membershipStatus);
+      if (!me || status !== "approved") return c.json({ error: "Akses khusus anggota aktif." }, 403);
+      const [inserted] = await db
+        .insert(news)
+        .values({ ...body, createdByEmail: email, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
+        .returning();
+      return c.json(inserted, 201);
+    }
+  );
+
+  api.post(
+    "/admin/news/:id/review",
+    zValidator(
+      "json",
+      z.object({
+        status: z.enum(PUBLISH_VALUES)
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+      if (!session || (!sessionRoles.includes("admin") && !sessionRoles.includes("pengurus"))) return c.json({ error: "Forbidden" }, 403);
+      const id = Number(c.req.param("id"));
+      const { status } = c.req.valid("json");
+      await db
+        .update(news)
+        .set({ publishStatus: status, reviewedBy: (session.email || session.name || "").trim(), reviewedAt: new Date().toISOString() })
+        .where(eq(news.id, id));
+      const updated = await db.select().from(news).where(eq(news.id, id)).get();
+      if (!updated) return c.json({ error: "Not found" }, 404);
+      return c.json(updated);
+    }
+  );
+
+  api.get("/portfolios", async (c) => {
+    const q = (c.req.query("q") || "").trim().toLowerCase();
+    const limit = Math.min(Number(c.req.query("limit") || 6), 60);
+    const includeAll = c.req.query("includeAll") === "1";
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    const canReview = sessionRoles.includes("admin") || sessionRoles.includes("pengurus");
+    const viewerEmail = (session?.email || "").trim().toLowerCase();
+    const visibilityWhere =
+      includeAll && canReview
+        ? undefined
+        : viewerEmail
+          ? or(eq(portfolios.publishStatus, "approved"), and(eq(portfolios.publishStatus, "pending"), eq(portfolios.createdByEmail, viewerEmail)))
+          : eq(portfolios.publishStatus, "approved");
+    const rows = await db
+      .select()
+      .from(portfolios)
+      .where(
+        and(
+          q
+            ? or(
+                like(portfolios.title, `%${q}%`),
+                like(portfolios.teacherName, `%${q}%`),
+                like(portfolios.school, `%${q}%`)
+              )
+            : undefined,
+          visibilityWhere
+        )
+      )
+      .orderBy(desc(portfolios.id))
+      .limit(limit);
+    return c.json(rows);
+  });
+
+  api.post(
+    "/portfolios",
+    zValidator(
+      "json",
+      z.object({
+        teacherName: z.string().min(3),
+        school: z.string().min(2).default("-"),
+        title: z.string().min(3),
+        description: z.string().min(10),
+        link: z.string().url().or(z.literal("")).default(""),
+        photoUrl: z.string().url().or(z.literal("")).default("")
+      })
+    ),
+    async (c) => {
+      const body = c.req.valid("json");
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      if (!session) return c.json({ error: "Unauthorized" }, 401);
+      const email = (session.email || "").trim().toLowerCase();
+      if (!email) return c.json({ error: "Forbidden" }, 403);
+      const me = await db.select().from(members).where(eq(members.email, email)).get();
+      const status = parseMembershipStatus(me?.membershipStatus);
+      if (!me || status !== "approved") return c.json({ error: "Akses khusus anggota aktif." }, 403);
+      const [inserted] = await db
+        .insert(portfolios)
+        .values({ ...body, createdByEmail: email, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
+        .returning();
+      return c.json(inserted, 201);
+    }
+  );
+
+  api.post(
+    "/admin/portfolios/:id/review",
+    zValidator(
+      "json",
+      z.object({
+        status: z.enum(PUBLISH_VALUES)
+      })
+    ),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+      if (!session || (!sessionRoles.includes("admin") && !sessionRoles.includes("pengurus"))) return c.json({ error: "Forbidden" }, 403);
+      const id = Number(c.req.param("id"));
+      const { status } = c.req.valid("json");
+      await db
+        .update(portfolios)
+        .set({ publishStatus: status, reviewedBy: (session.email || session.name || "").trim(), reviewedAt: new Date().toISOString() })
+        .where(eq(portfolios.id, id));
+      const updated = await db.select().from(portfolios).where(eq(portfolios.id, id)).get();
+      if (!updated) return c.json({ error: "Not found" }, 404);
+      return c.json(updated);
+    }
+  );
+
+  return api;
+}

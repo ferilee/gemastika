@@ -1,0 +1,25 @@
+{
+  "name": "@mgmp/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "test": "bun test",
+    "start": "bun dist/index.js",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun src/db/migrate.ts",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "hono": "^4.9.0",
+    "zod": "^4.1.5",
+    "@hono/zod-validator": "^0.7.0",
+    "drizzle-orm": "^0.44.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.4",
+    "typescript": "^5.9.2",
+    "@types/bun": "^1.2.22"
+  }
+}

@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --radius: 14px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-mgmp-surface text-slate-800 font-sans antialiased;
+}
+
+.dark body {
+  @apply bg-mgmp-dark text-slate-200;
+}
+
+/* Minimal shadcn-like tokens */
+:root {
+  --background: 248 250 252;
+  --foreground: 15 23 42;
+  --muted: 241 245 249;
+  --muted-foreground: 100 116 139;
+  --popover: 255 255 255;
+  --popover-foreground: 15 23 42;
+  --card: 255 255 255;
+  --card-foreground: 15 23 42;
+  --border: 226 232 240;
+  --input: 226 232 240;
+  --primary: 29 78 216;
+  --primary-foreground: 248 250 252;
+  --secondary: 241 245 249;
+  --secondary-foreground: 15 23 42;
+  --accent: 245 158 11;
+  --accent-foreground: 15 23 42;
+  --ring: 29 78 216;
+}
+
+.dark {
+  --background: 2 6 23;
+  --foreground: 226 232 240;
+  --muted: 30 41 59;
+  --muted-foreground: 148 163 184;
+  --popover: 15 23 42;
+  --popover-foreground: 226 232 240;
+  --card: 15 23 42;
+  --card-foreground: 226 232 240;
+  --border: 51 65 85;
+  --input: 51 65 85;
+  --primary: 59 130 246;
+  --primary-foreground: 2 6 23;
+  --secondary: 30 41 59;
+  --secondary-foreground: 226 232 240;
+  --accent: 245 158 11;
+  --accent-foreground: 2 6 23;
+  --ring: 59 130 246;
+}

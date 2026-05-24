@@ -1,0 +1,1 @@
+ALTER TABLE `members` ADD `telegram` text DEFAULT '' NOT NULL;

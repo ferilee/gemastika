@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/.turbo
+**/.cache
+**/.DS_Store
+apps/server/data
+apps/server/.env
+apps/server/drizzle/meta/_journal.json.bak
+.git
