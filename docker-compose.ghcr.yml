@@ -11,6 +11,14 @@ services:
       DB_PATH: /app/data/app.db
       WEB_ORIGIN: https://gemastika.or.id
       CORS_ORIGIN: https://gemastika.or.id
+      # RustFS (S3-compatible) - gunakan endpoint publik untuk app ini
+      S3_ENDPOINT: https://s3.gemastika.or.id
+      S3_BUCKET: gemastika-assets
+      S3_REGION: us-east-1
+      S3_FORCE_PATH_STYLE: "true"
+      # Isi sesuai credential RustFS:
+      # S3_ACCESS_KEY: ""
+      # S3_SECRET_KEY: ""
       # Sesuaikan kredensial OAuth dan admin:
       # GOOGLE_CLIENT_ID: ""
       # GOOGLE_CLIENT_SECRET: ""

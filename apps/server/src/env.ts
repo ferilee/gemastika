@@ -17,6 +17,12 @@ export function getEnv() {
     .split(",")
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
+  const s3Endpoint = process.env.S3_ENDPOINT || "";
+  const s3AccessKey = process.env.S3_ACCESS_KEY || "";
+  const s3SecretKey = process.env.S3_SECRET_KEY || "";
+  const s3Bucket = process.env.S3_BUCKET || "gemastika-assets";
+  const s3Region = process.env.S3_REGION || "us-east-1";
+  const s3ForcePathStyle = (process.env.S3_FORCE_PATH_STYLE || "true").toLowerCase() === "true";
 
   return {
     port,
@@ -28,6 +34,12 @@ export function getEnv() {
     googleClientSecret,
     googleRedirectUri,
     sessionSecret,
-    adminEmails
+    adminEmails,
+    s3Endpoint,
+    s3AccessKey,
+    s3SecretKey,
+    s3Bucket,
+    s3Region,
+    s3ForcePathStyle
   };
 }

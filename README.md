@@ -36,3 +36,25 @@ bun run db:generate
 bun run db:migrate
 ```
 
+## Integrasi RustFS (Gemastika)
+
+Untuk aplikasi Gemastika gunakan bucket:
+
+`gemastika-assets`
+
+Konfigurasi environment backend:
+
+```env
+S3_ENDPOINT=https://s3.gemastika.or.id
+S3_ACCESS_KEY=isi_dengan_RUSTFS_ACCESS_KEY
+S3_SECRET_KEY=isi_dengan_RUSTFS_SECRET_KEY
+S3_BUCKET=gemastika-assets
+S3_REGION=us-east-1
+S3_FORCE_PATH_STYLE=true
+```
+
+Jika aplikasi dijalankan sebagai container yang berada di network `ferileenet`, endpoint bisa diganti:
+
+```env
+S3_ENDPOINT=http://global-storage:9000
+```
