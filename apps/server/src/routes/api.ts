@@ -167,6 +167,65 @@ export function apiRouter(db: Db) {
 
   api.get("/health", (c) => c.json({ ok: true }));
 
+  api.get("/admin/rustfs-check", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !sessionRoles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
+
+    if (!env.s3Endpoint || !env.s3AccessKey || !env.s3SecretKey || !env.s3Bucket) {
+      return c.json({ ok: false, error: "Konfigurasi RustFS belum lengkap di server." }, 500);
+    }
+
+    const startedAt = Date.now();
+    const pingBase = env.s3Endpoint;
+    let pingStatus = 0;
+    let pingError = "";
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort("timeout"), 8000);
+      const pingRes = await fetch(pingBase, { signal: controller.signal });
+      clearTimeout(timeout);
+      pingStatus = pingRes.status;
+    } catch (err) {
+      pingError = err instanceof Error ? err.message : String(err);
+    }
+
+    const s3 = new S3Client({
+      endpoint: env.s3Endpoint,
+      accessKeyId: env.s3AccessKey,
+      secretAccessKey: env.s3SecretKey,
+      bucket: env.s3Bucket,
+      region: env.s3Region,
+      virtualHostedStyle: !env.s3ForcePathStyle
+    });
+
+    const key = `healthchecks/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.txt`;
+    let writeDeleteOk = false;
+    let writeDeleteError = "";
+    try {
+      await Promise.race([
+        s3.file(key).write("gemastika-rustfs-check"),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("write timeout")), 10000))
+      ]);
+      await Promise.race([s3.file(key).delete(), new Promise((_, reject) => setTimeout(() => reject(new Error("delete timeout")), 10000))]);
+      writeDeleteOk = true;
+    } catch (err) {
+      writeDeleteError = err instanceof Error ? err.message : String(err);
+    }
+
+    const durationMs = Date.now() - startedAt;
+    const ok = writeDeleteOk;
+    return c.json({
+      ok,
+      bucket: env.s3Bucket,
+      endpoint: env.s3Endpoint,
+      ping: { status: pingStatus || null, error: pingError || null },
+      objectCheck: { ok: writeDeleteOk, error: writeDeleteError || null },
+      durationMs
+    });
+  });
+
   api.post("/uploads/image", async (c) => {
     const env = getEnv();
     const session = await getSession(c, env.sessionSecret);

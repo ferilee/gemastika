@@ -14,6 +14,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { hasRole, useAuth } from "@/state/AuthContext";
 
+function parseUploadErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error)) return fallback;
+  const raw = (error.message || "").trim();
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw) as { error?: string; message?: string };
+    if (parsed?.error) return parsed.error;
+    if (parsed?.message) return parsed.message;
+  } catch {
+    // not json
+  }
+  return raw;
+}
+
 export function BeritaPage() {
   const { isApprovedMember, user } = useAuth();
   const { news, loading, addNews, removeNews } = useAppData();
@@ -212,7 +226,7 @@ export function BeritaPage() {
       setNewsForm((v) => ({ ...v, imageUrl: json.url || "" }));
       alert("Gambar berhasil diunggah.");
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Gagal mengunggah gambar.");
+      alert(parseUploadErrorMessage(e, "Gagal mengunggah gambar."));
     } finally {
       setUploadingImage(false);
       setTimeout(() => setUploadProgress(0), 600);

@@ -145,6 +145,7 @@ describe("api endpoints", () => {
     form.append("scope", "news");
     form.append("file", new File(["abc"], "x.png", { type: "image/png" }));
     expect((await app.request("http://local/api/uploads/image", { method: "POST", body: form })).status).toBe(401);
+    expect((await app.request("http://local/api/admin/rustfs-check")).status).toBe(403);
   });
 
   it("admin member management endpoints", async () => {
