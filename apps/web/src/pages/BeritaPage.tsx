@@ -17,7 +17,7 @@ import { hasRole, useAuth } from "@/state/AuthContext";
 export function BeritaPage() {
   const { isApprovedMember, user } = useAuth();
   const { news, loading, addNews, removeNews } = useAppData();
-  const canManageNews = hasRole(user, "admin") || hasRole(user, "pengurus");
+  const canManageNews = hasRole(user, "admin");
 
   const [newsQ, setNewsQ] = useState("");
   const [newsCategory, setNewsCategory] = useState("All");

@@ -310,8 +310,16 @@ describe("api endpoints", () => {
 
     expect((await app.request(`http://local/api/admin/news/${createdNews.id}`, { method: "DELETE", headers: { cookie: anggotaCookie } })).status).toBe(403);
     const pengurusCookie = await getCookie(app, "pengurus");
-    expect((await app.request(`http://local/api/admin/news/${createdNews.id}`, { method: "DELETE", headers: { cookie: pengurusCookie } })).status).toBe(200);
+    expect((await app.request(`http://local/api/admin/news/${createdNews.id}`, { method: "DELETE", headers: { cookie: pengurusCookie } })).status).toBe(403);
+    const adminCookie = await getCookie(app, "admin");
+    expect((await app.request(`http://local/api/admin/news/${createdNews.id}`, { method: "DELETE", headers: { cookie: adminCookie } })).status).toBe(200);
     expect((await app.request(`http://local/api/news/${createdNews.id}`)).status).toBe(404);
+
+    expect((await app.request(`http://local/api/admin/portfolios/${seed.portfolio.id}`, { method: "DELETE", headers: { cookie: pengurusCookie } })).status).toBe(403);
+    expect((await app.request(`http://local/api/admin/portfolios/${seed.portfolio.id}`, { method: "DELETE", headers: { cookie: adminCookie } })).status).toBe(200);
+    const afterDeletePortfolios = await app.request("http://local/api/portfolios?limit=10");
+    const rows = (await afterDeletePortfolios.json()) as Array<{ id: number }>;
+    expect(rows.some((row) => row.id === seed.portfolio.id)).toBe(false);
   });
 
   it("comment + reaction endpoints", async () => {

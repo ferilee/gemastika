@@ -1031,7 +1031,7 @@ export function apiRouter(db: Db) {
     const env = getEnv();
     const session = await getSession(c, env.sessionSecret);
     const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
-    if (!session || (!sessionRoles.includes("admin") && !sessionRoles.includes("pengurus"))) return c.json({ error: "Forbidden" }, 403);
+    if (!session || !sessionRoles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
 
     const id = Number(c.req.param("id"));
     const existing = await db.select({ id: news.id }).from(news).where(eq(news.id, id)).get();
@@ -1136,6 +1136,26 @@ export function apiRouter(db: Db) {
       return c.json(updated);
     }
   );
+
+  api.delete("/admin/portfolios/:id", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !sessionRoles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
+
+    const id = Number(c.req.param("id"));
+    const existing = await db.select({ id: portfolios.id }).from(portfolios).where(eq(portfolios.id, id)).get();
+    if (!existing) return c.json({ error: "Not found" }, 404);
+
+    await db.transaction(async (tx) => {
+      await tx.delete(comments).where(and(eq(comments.targetType, "portfolio"), eq(comments.targetId, id)));
+      await tx.delete(reactions).where(and(eq(reactions.targetType, "portfolio"), eq(reactions.targetId, id)));
+      await tx.delete(portfolioRatings).where(eq(portfolioRatings.portfolioId, id));
+      await tx.delete(portfolios).where(eq(portfolios.id, id));
+    });
+
+    return c.json({ ok: true, id });
+  });
 
   return api;
 }

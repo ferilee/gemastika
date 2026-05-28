@@ -14,6 +14,7 @@ type AppDataState = {
   addNews: (created: News) => void;
   removeNews: (id: number) => void;
   addPortfolio: (created: Portfolio) => void;
+  removePortfolio: (id: number) => void;
   patchMember: (member: Member) => void;
   setHomeContent: (value: HomeContent) => void;
 };
@@ -84,6 +85,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       addNews: (created) => setNews((v) => [created, ...v]),
       removeNews: (id) => setNews((v) => v.filter((item) => item.id !== id)),
       addPortfolio: (created) => setPortfolios((v) => [created, ...v]),
+      removePortfolio: (id) => setPortfolios((v) => v.filter((item) => item.id !== id)),
       patchMember: (member) =>
         setMembers((prev) => {
           const idx = prev.findIndex((m) => m.id === member.id);

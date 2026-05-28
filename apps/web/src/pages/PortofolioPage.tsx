@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, FilePlus2, Search, Star } from "lucide-react";
+import { AlertTriangle, ExternalLink, FilePlus2, Search, Star, Trash2 } from "lucide-react";
 import { api } from "@/api/client";
 import type { CommentItem, Portfolio, ReactionItem } from "@/types";
 import { useAppData } from "@/state/AppDataContext";
@@ -8,11 +8,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/state/AuthContext";
+import { hasRole, useAuth } from "@/state/AuthContext";
 
 export function PortofolioPage() {
   const { isApprovedMember, user } = useAuth();
-  const { portfolios, loading, addPortfolio } = useAppData();
+  const { portfolios, loading, addPortfolio, removePortfolio } = useAppData();
+  const canManagePortfolio = hasRole(user, "admin");
   const [portfolioQ, setPortfolioQ] = useState("");
 
   const [openPortfolioCreate, setOpenPortfolioCreate] = useState(false);
@@ -26,6 +27,8 @@ export function PortofolioPage() {
   const [submittingReaction, setSubmittingReaction] = useState(false);
   const [ratingInfo, setRatingInfo] = useState<{ average: number; count: number; myRating: number }>({ average: 0, count: 0, myRating: 0 });
   const [submittingRating, setSubmittingRating] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Portfolio | null>(null);
+  const [deletingPortfolioId, setDeletingPortfolioId] = useState<number | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const reactionOptions = ["👍", "❤️", "👏"];
   const [portfolioForm, setPortfolioForm] = useState({
@@ -193,6 +196,25 @@ export function PortofolioPage() {
     }
   }
 
+  async function deletePortfolioItem(item: Portfolio) {
+    setDeletingPortfolioId(item.id);
+    try {
+      await api(`/api/admin/portfolios/${item.id}`, { method: "DELETE" });
+      removePortfolio(item.id);
+      setReactions((prev) => prev.filter((row) => row.targetId !== item.id));
+      if (selectedPortfolio?.id === item.id) {
+        setSelectedPortfolio(null);
+        setOpenPortfolioDetail(false);
+      }
+      setDeleteTarget(null);
+      alert("Portofolio berhasil dihapus.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Gagal menghapus portofolio.");
+    } finally {
+      setDeletingPortfolioId(null);
+    }
+  }
+
   return (
     <>
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -288,6 +310,20 @@ export function PortofolioPage() {
                   })}
                 </div>
               </CardContent>
+              {canManagePortfolio ? (
+                <div className="px-6 pb-6 flex justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400"
+                    disabled={deletingPortfolioId === p.id}
+                    onClick={() => setDeleteTarget(p)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Hapus</span>
+                  </Button>
+                </div>
+              ) : null}
             </Card>
           ))
         )}
@@ -321,6 +357,16 @@ export function PortofolioPage() {
                     >
                       Buka Karya <ExternalLink className="h-4 w-4" />
                     </a>
+                  ) : null}
+                  {canManagePortfolio ? (
+                    <Button
+                      type="button"
+                      className="mt-4 w-full bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400"
+                      disabled={deletingPortfolioId === selectedPortfolio.id}
+                      onClick={() => setDeleteTarget(selectedPortfolio)}
+                    >
+                      <Trash2 className="h-4 w-4" /> Hapus Portofolio
+                    </Button>
                   ) : null}
                   <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
                     <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -408,6 +454,31 @@ export function PortofolioPage() {
               </div>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="inline-flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-rose-500" /> Hapus Portofolio
+            </DialogTitle>
+            <DialogDescription>
+              Portofolio "{deleteTarget?.title}" akan dihapus permanen beserta komentar, reaksi, dan rating.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 pb-6 flex gap-2 justify-end">
+            <Button variant="secondary" disabled={Boolean(deletingPortfolioId)} onClick={() => setDeleteTarget(null)}>
+              Batal
+            </Button>
+            <Button
+              className="bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400"
+              disabled={!deleteTarget || deletingPortfolioId === deleteTarget.id}
+              onClick={() => deleteTarget && void deletePortfolioItem(deleteTarget)}
+            >
+              <Trash2 className="h-4 w-4" /> Hapus
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
