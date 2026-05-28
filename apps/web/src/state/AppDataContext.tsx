@@ -12,6 +12,7 @@ type AppDataState = {
   error: string | null;
   reload: () => Promise<void>;
   addNews: (created: News) => void;
+  removeNews: (id: number) => void;
   addPortfolio: (created: Portfolio) => void;
   patchMember: (member: Member) => void;
   setHomeContent: (value: HomeContent) => void;
@@ -81,6 +82,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       error,
       reload,
       addNews: (created) => setNews((v) => [created, ...v]),
+      removeNews: (id) => setNews((v) => v.filter((item) => item.id !== id)),
       addPortfolio: (created) => setPortfolios((v) => [created, ...v]),
       patchMember: (member) =>
         setMembers((prev) => {

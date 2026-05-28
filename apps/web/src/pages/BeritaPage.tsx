@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, FilePlus2, Search } from "lucide-react";
+import { AlertTriangle, ExternalLink, FilePlus2, Search, Trash2 } from "lucide-react";
 import { api } from "@/api/client";
 import type { CommentItem, News, ReactionItem } from "@/types";
 import { useAppData } from "@/state/AppDataContext";
 import { CATEGORIES } from "@/lib/mgmp";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,11 +12,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/state/AuthContext";
+import { hasRole, useAuth } from "@/state/AuthContext";
 
 export function BeritaPage() {
   const { isApprovedMember, user } = useAuth();
-  const { news, loading, addNews } = useAppData();
+  const { news, loading, addNews, removeNews } = useAppData();
+  const canManageNews = hasRole(user, "admin") || hasRole(user, "pengurus");
 
   const [newsQ, setNewsQ] = useState("");
   const [newsCategory, setNewsCategory] = useState("All");
@@ -29,6 +31,8 @@ export function BeritaPage() {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [reactions, setReactions] = useState<ReactionItem[]>([]);
   const [submittingReaction, setSubmittingReaction] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<News | null>(null);
+  const [deletingNewsId, setDeletingNewsId] = useState<number | null>(null);
   const reactionOptions = ["👍", "❤️", "👏"];
 
   const [newsForm, setNewsForm] = useState({
@@ -148,6 +152,25 @@ export function BeritaPage() {
     }
   }
 
+  async function deleteNewsItem(item: News) {
+    setDeletingNewsId(item.id);
+    try {
+      await api(`/api/admin/news/${item.id}`, { method: "DELETE" });
+      removeNews(item.id);
+      setReactions((prev) => prev.filter((row) => row.targetId !== item.id));
+      if (selectedNews?.id === item.id) {
+        setSelectedNews(null);
+        setOpenNewsDetail(false);
+      }
+      setDeleteTarget(null);
+      alert("Berita berhasil dihapus.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Gagal menghapus berita.");
+    } finally {
+      setDeletingNewsId(null);
+    }
+  }
+
   return (
     <>
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -192,8 +215,19 @@ export function BeritaPage() {
           <div className="col-span-full text-center text-slate-500 py-12">Belum ada berita.</div>
         ) : (
           filteredNews.map((n) => (
-            <Card key={n.id} asChild className="group text-left overflow-hidden transition flex flex-col">
-              <button onClick={() => openNewsModal(n)} className="text-left">
+            <Card key={n.id} className="group text-left overflow-hidden transition flex flex-col">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => openNewsModal(n)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openNewsModal(n);
+                  }
+                }}
+                className="cursor-pointer text-left flex-1"
+              >
                 <div className="h-40 bg-slate-200 dark:bg-slate-800 overflow-hidden">
                   {n.imageUrl ? (
                     <img className="h-full w-full object-cover group-hover:scale-105 transition duration-500" src={n.imageUrl} alt={n.title} />
@@ -239,9 +273,27 @@ export function BeritaPage() {
                       );
                     })}
                   </div>
-                  <div className="mt-4 text-sm font-extrabold text-mgmp-primary">Baca Selengkapnya</div>
                 </CardContent>
-              </button>
+              </div>
+              <div className="mt-auto flex items-center justify-between gap-2 px-5 pb-5">
+                <button type="button" className="text-sm font-extrabold text-mgmp-primary" onClick={() => openNewsModal(n)}>
+                  Baca Selengkapnya
+                </button>
+                {canManageNews ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400"
+                    disabled={deletingNewsId === n.id}
+                    onClick={() => setDeleteTarget(n)}
+                    title="Hapus berita"
+                    aria-label="Hapus berita"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Hapus</span>
+                  </Button>
+                ) : null}
+              </div>
             </Card>
           ))
         )}
@@ -265,9 +317,17 @@ export function BeritaPage() {
                     <div className="text-xs text-slate-500 dark:text-slate-400">{selectedNews.date}</div>
                   </div>
                   <div className="mt-3 text-2xl font-extrabold text-slate-800 dark:text-white">{selectedNews.title}</div>
-                  <div className="mt-4 prose dark:prose-invert max-w-none">
-                    <p className="whitespace-pre-line">{selectedNews.content || selectedNews.summary}</p>
-                  </div>
+                  <MarkdownContent value={selectedNews.content || selectedNews.summary} className="mt-4" />
+                  {canManageNews ? (
+                    <Button
+                      type="button"
+                      className="mt-6 w-full bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400"
+                      disabled={deletingNewsId === selectedNews.id}
+                      onClick={() => setDeleteTarget(selectedNews)}
+                    >
+                      <Trash2 className="h-4 w-4" /> Hapus Berita
+                    </Button>
+                  ) : null}
                   {selectedNews.documentUrl ? (
                     <a
                       className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-4 py-3 font-extrabold text-slate-800 dark:text-slate-100 hover:bg-mgmp-primary hover:text-white transition"
@@ -342,6 +402,31 @@ export function BeritaPage() {
               </div>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="inline-flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-rose-500" /> Hapus Berita
+            </DialogTitle>
+            <DialogDescription>
+              Berita "{deleteTarget?.title}" akan dihapus permanen beserta komentar dan reaksinya.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 pb-6 flex gap-2 justify-end">
+            <Button variant="secondary" disabled={Boolean(deletingNewsId)} onClick={() => setDeleteTarget(null)}>
+              Batal
+            </Button>
+            <Button
+              className="bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400"
+              disabled={!deleteTarget || deletingNewsId === deleteTarget.id}
+              onClick={() => deleteTarget && void deleteNewsItem(deleteTarget)}
+            >
+              <Trash2 className="h-4 w-4" /> Hapus
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

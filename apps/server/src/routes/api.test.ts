@@ -268,24 +268,22 @@ describe("api endpoints", () => {
     expect((await app.request(`http://local/api/news/${seed.newsRow.id}`)).status).toBe(200);
     expect((await app.request("http://local/api/portfolios?limit=10")).status).toBe(200);
     const anggotaCookie = await getCookie(app, "anggota");
-    expect(
-      (
-        await app.request("http://local/api/news", {
-          method: "POST",
-          headers: { "content-type": "application/json", cookie: anggotaCookie },
-          body: JSON.stringify({
-            title: "Berita baru",
-            category: "Umum",
-            author: "Anggota",
-            date: "2026-01-02",
-            summary: "Ringkasan berita yang cukup panjang untuk lolos validasi",
-            content: "Konten berita yang cukup panjang untuk lolos validasi",
-            imageUrl: "",
-            documentUrl: ""
-          })
-        })
-      ).status
-    ).toBe(201);
+    const newsCreateRes = await app.request("http://local/api/news", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: anggotaCookie },
+      body: JSON.stringify({
+        title: "Berita baru",
+        category: "Umum",
+        author: "Anggota",
+        date: "2026-01-02",
+        summary: "Ringkasan berita yang cukup panjang untuk lolos validasi",
+        content: "Konten berita yang cukup panjang untuk lolos validasi",
+        imageUrl: "",
+        documentUrl: ""
+      })
+    });
+    expect(newsCreateRes.status).toBe(201);
+    const createdNews = (await newsCreateRes.json()) as { id: number };
     expect(
       (
         await app.request("http://local/api/portfolios", {
@@ -302,6 +300,11 @@ describe("api endpoints", () => {
         })
       ).status
     ).toBe(201);
+
+    expect((await app.request(`http://local/api/admin/news/${createdNews.id}`, { method: "DELETE", headers: { cookie: anggotaCookie } })).status).toBe(403);
+    const pengurusCookie = await getCookie(app, "pengurus");
+    expect((await app.request(`http://local/api/admin/news/${createdNews.id}`, { method: "DELETE", headers: { cookie: pengurusCookie } })).status).toBe(200);
+    expect((await app.request(`http://local/api/news/${createdNews.id}`)).status).toBe(404);
   });
 
   it("comment + reaction endpoints", async () => {

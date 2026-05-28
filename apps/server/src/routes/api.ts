@@ -966,6 +966,25 @@ export function apiRouter(db: Db) {
     }
   );
 
+  api.delete("/admin/news/:id", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || (!sessionRoles.includes("admin") && !sessionRoles.includes("pengurus"))) return c.json({ error: "Forbidden" }, 403);
+
+    const id = Number(c.req.param("id"));
+    const existing = await db.select({ id: news.id }).from(news).where(eq(news.id, id)).get();
+    if (!existing) return c.json({ error: "Not found" }, 404);
+
+    await db.transaction(async (tx) => {
+      await tx.delete(comments).where(and(eq(comments.targetType, "news"), eq(comments.targetId, id)));
+      await tx.delete(reactions).where(and(eq(reactions.targetType, "news"), eq(reactions.targetId, id)));
+      await tx.delete(news).where(eq(news.id, id));
+    });
+
+    return c.json({ ok: true, id });
+  });
+
   api.get("/portfolios", async (c) => {
     const q = (c.req.query("q") || "").trim().toLowerCase();
     const limit = Math.min(Number(c.req.query("limit") || 6), 60);
