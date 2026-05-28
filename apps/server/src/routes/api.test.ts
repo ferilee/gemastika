@@ -140,6 +140,13 @@ describe("api endpoints", () => {
     expect(byIdRes.status).toBe(200);
   });
 
+  it("upload endpoint auth guard", async () => {
+    const form = new FormData();
+    form.append("scope", "news");
+    form.append("file", new File(["abc"], "x.png", { type: "image/png" }));
+    expect((await app.request("http://local/api/uploads/image", { method: "POST", body: form })).status).toBe(401);
+  });
+
   it("admin member management endpoints", async () => {
     expect((await app.request("http://local/api/admin/members/2/roles", { method: "POST", body: JSON.stringify({ roles: ["anggota"] }), headers: { "content-type": "application/json" } })).status).toBe(403);
     const adminCookie = await getCookie(app, "admin");

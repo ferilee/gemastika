@@ -51,6 +51,7 @@ S3_SECRET_KEY=isi_dengan_RUSTFS_SECRET_KEY
 S3_BUCKET=gemastika-assets
 S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
+S3_PUBLIC_BASE_URL=https://s3.gemastika.or.id
 ```
 
 Jika aplikasi dijalankan sebagai container yang berada di network `ferileenet`, endpoint bisa diganti:
@@ -58,3 +59,7 @@ Jika aplikasi dijalankan sebagai container yang berada di network `ferileenet`, 
 ```env
 S3_ENDPOINT=http://global-storage:9000
 ```
+
+Endpoint upload internal Gemastika:
+
+`POST /api/uploads/image` (multipart form-data, field `file`, optional `scope`: `news|portfolio`)

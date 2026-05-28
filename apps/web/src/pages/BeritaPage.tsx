@@ -33,6 +33,7 @@ export function BeritaPage() {
   const [submittingReaction, setSubmittingReaction] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<News | null>(null);
   const [deletingNewsId, setDeletingNewsId] = useState<number | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const reactionOptions = ["👍", "❤️", "👏"];
 
   const [newsForm, setNewsForm] = useState({
@@ -168,6 +169,24 @@ export function BeritaPage() {
       alert(e instanceof Error ? e.message : "Gagal menghapus berita.");
     } finally {
       setDeletingNewsId(null);
+    }
+  }
+
+  async function uploadNewsImage(file: File) {
+    setUploadingImage(true);
+    try {
+      const form = new FormData();
+      form.append("scope", "news");
+      form.append("file", file);
+      const res = await fetch("/api/uploads/image", { method: "POST", body: form, credentials: "include" });
+      const json = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !json.url) throw new Error(json.error || "Gagal mengunggah gambar.");
+      setNewsForm((v) => ({ ...v, imageUrl: json.url || "" }));
+      alert("Gambar berhasil diunggah.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Gagal mengunggah gambar.");
+    } finally {
+      setUploadingImage(false);
     }
   }
 
@@ -460,6 +479,19 @@ export function BeritaPage() {
                 value={newsForm.imageUrl}
                 onChange={(e) => setNewsForm((v) => ({ ...v, imageUrl: e.target.value }))}
               />
+            </div>
+            <div className="space-y-2">
+              <Input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={uploadingImage}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void uploadNewsImage(f);
+                  e.currentTarget.value = "";
+                }}
+              />
+              <div className="text-xs text-slate-500 dark:text-slate-400">{uploadingImage ? "Mengunggah gambar..." : "Pilih file untuk upload ke RustFS."}</div>
             </div>
             <Textarea placeholder="Ringkasan" value={newsForm.summary} onChange={(e) => setNewsForm((v) => ({ ...v, summary: e.target.value }))} />
             <Textarea

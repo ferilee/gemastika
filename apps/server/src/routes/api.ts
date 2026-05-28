@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { S3Client } from "bun";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { and, asc, desc, eq, like, or, sql } from "drizzle-orm";
@@ -149,10 +150,70 @@ function isValidTelegram(raw: string) {
   return /^[a-zA-Z0-9_]{5,32}$/.test(value);
 }
 
+function cleanBaseUrl(raw: string) {
+  return raw.trim().replace(/\/+$/, "");
+}
+
+function guessExt(contentType: string) {
+  const c = contentType.toLowerCase();
+  if (c.includes("image/jpeg")) return "jpg";
+  if (c.includes("image/png")) return "png";
+  if (c.includes("image/webp")) return "webp";
+  return "bin";
+}
+
 export function apiRouter(db: Db) {
   const api = new Hono().basePath("/api");
 
   api.get("/health", (c) => c.json({ ok: true }));
+
+  api.post("/uploads/image", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    if (!session) return c.json({ error: "Silakan masuk terlebih dahulu." }, 401);
+    const email = (session.email || "").trim().toLowerCase();
+    if (!email) return c.json({ error: "Forbidden" }, 403);
+    const me = await db.select().from(members).where(eq(members.email, email)).get();
+    const status = parseMembershipStatus(me?.membershipStatus);
+    if (!me || status !== "approved") return c.json({ error: "Akses khusus anggota aktif." }, 403);
+
+    if (!env.s3Endpoint || !env.s3AccessKey || !env.s3SecretKey || !env.s3Bucket) {
+      return c.json({ error: "Konfigurasi RustFS belum lengkap di server." }, 500);
+    }
+
+    const body = await c.req.parseBody();
+    const fileLike = body.file;
+    const scope = String(body.scope || "misc").trim().toLowerCase();
+    const folder = scope === "news" || scope === "portfolio" ? scope : "misc";
+    const file = Array.isArray(fileLike) ? fileLike[0] : fileLike;
+    if (!(file instanceof File)) return c.json({ error: "File gambar tidak ditemukan." }, 400);
+    if (!file.type || !["image/jpeg", "image/png", "image/webp"].includes(file.type.toLowerCase())) {
+      return c.json({ error: "Format gambar harus JPG, PNG, atau WEBP." }, 400);
+    }
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) return c.json({ error: "Ukuran gambar maksimal 5MB." }, 400);
+
+    const now = new Date();
+    const y = now.getUTCFullYear();
+    const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+    const ext = guessExt(file.type);
+    const key = `${folder}/${y}/${m}/${crypto.randomUUID()}.${ext}`;
+
+    const s3 = new S3Client({
+      endpoint: env.s3Endpoint,
+      accessKeyId: env.s3AccessKey,
+      secretAccessKey: env.s3SecretKey,
+      bucket: env.s3Bucket,
+      region: env.s3Region,
+      virtualHostedStyle: !env.s3ForcePathStyle
+    });
+
+    await s3.file(key).write(file);
+
+    const publicBase = cleanBaseUrl(env.s3PublicBaseUrl || (env.s3Endpoint.startsWith("https://") ? env.s3Endpoint : "https://s3.gemastika.or.id"));
+    const url = `${publicBase}/${env.s3Bucket}/${key}`;
+    return c.json({ key, url }, 201);
+  });
 
   api.get("/comments", async (c) => {
     const targetType = (c.req.query("targetType") || "").trim().toLowerCase();
