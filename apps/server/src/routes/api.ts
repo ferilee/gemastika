@@ -208,7 +208,16 @@ export function apiRouter(db: Db) {
       virtualHostedStyle: !env.s3ForcePathStyle
     });
 
-    await s3.file(key).write(file);
+    try {
+      await Promise.race([
+        s3.file(key).write(file),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timeout ke RustFS.")), 15000))
+      ]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Gagal upload ke RustFS.";
+      console.error("upload_image_error:", message);
+      return c.json({ error: message }, 502);
+    }
 
     const publicBase = cleanBaseUrl(env.s3PublicBaseUrl || (env.s3Endpoint.startsWith("https://") ? env.s3Endpoint : "https://s3.gemastika.or.id"));
     const url = `${publicBase}/${env.s3Bucket}/${key}`;

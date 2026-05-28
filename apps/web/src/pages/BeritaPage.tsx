@@ -34,6 +34,7 @@ export function BeritaPage() {
   const [deleteTarget, setDeleteTarget] = useState<News | null>(null);
   const [deletingNewsId, setDeletingNewsId] = useState<number | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const reactionOptions = ["👍", "❤️", "👏"];
 
   const [newsForm, setNewsForm] = useState({
@@ -174,19 +175,47 @@ export function BeritaPage() {
 
   async function uploadNewsImage(file: File) {
     setUploadingImage(true);
+    setUploadProgress(0);
     try {
       const form = new FormData();
       form.append("scope", "news");
       form.append("file", file);
-      const res = await fetch("/api/uploads/image", { method: "POST", body: form, credentials: "include" });
-      const json = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !json.url) throw new Error(json.error || "Gagal mengunggah gambar.");
+      const raw = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/uploads/image");
+        xhr.withCredentials = true;
+        xhr.timeout = 20000;
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
+          setUploadProgress(percent);
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setUploadProgress(100);
+            resolve(xhr.responseText || "");
+            return;
+          }
+          reject(new Error(xhr.responseText || `Upload gagal (${xhr.status}).`));
+        };
+        xhr.onerror = () => reject(new Error("Koneksi upload gagal."));
+        xhr.ontimeout = () => reject(new Error("Upload gambar timeout. Cek koneksi RustFS/server."));
+        xhr.send(form);
+      });
+      let json: { url?: string; error?: string } = {};
+      try {
+        json = raw ? (JSON.parse(raw) as { url?: string; error?: string }) : {};
+      } catch {
+        json = {};
+      }
+      if (!json.url) throw new Error("URL gambar tidak diterima dari server.");
       setNewsForm((v) => ({ ...v, imageUrl: json.url || "" }));
       alert("Gambar berhasil diunggah.");
     } catch (e) {
       alert(e instanceof Error ? e.message : "Gagal mengunggah gambar.");
     } finally {
       setUploadingImage(false);
+      setTimeout(() => setUploadProgress(0), 600);
     }
   }
 
@@ -492,6 +521,14 @@ export function BeritaPage() {
                 }}
               />
               <div className="text-xs text-slate-500 dark:text-slate-400">{uploadingImage ? "Mengunggah gambar..." : "Pilih file untuk upload ke RustFS."}</div>
+              {uploadingImage ? (
+                <div className="space-y-1">
+                  <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">Progress: {uploadProgress}%</div>
+                  <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                    <div className="h-full bg-mgmp-primary transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                </div>
+              ) : null}
             </div>
             <Textarea placeholder="Ringkasan" value={newsForm.summary} onChange={(e) => setNewsForm((v) => ({ ...v, summary: e.target.value }))} />
             <Textarea
