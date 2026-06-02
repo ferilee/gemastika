@@ -1034,6 +1034,15 @@ export function apiRouter(db: Db) {
     const id = Number(c.req.param("id"));
     const row = await db.select().from(news).where(eq(news.id, id)).get();
     if (!row) return c.json({ error: "Not found" }, 404);
+
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    const canReview = sessionRoles.includes("admin") || sessionRoles.includes("pengurus");
+    const viewerEmail = (session?.email || "").trim().toLowerCase();
+    const isOwner = Boolean(viewerEmail && (row.createdByEmail || "").trim().toLowerCase() === viewerEmail);
+    if (parsePublishStatus(row.publishStatus) !== "approved" && !canReview && !isOwner) return c.json({ error: "Not found" }, 404);
+
     return c.json(row);
   });
 
@@ -1067,6 +1076,47 @@ export function apiRouter(db: Db) {
         .values({ ...body, createdByEmail: email, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
         .returning();
       return c.json(inserted, 201);
+    }
+  );
+
+  api.patch(
+    "/news/:id",
+    zValidator(
+      "json",
+      z.object({
+        title: z.string().min(3),
+        category: z.string().min(2).default("Umum"),
+        author: z.string().min(2).default("Admin"),
+        date: z.string().min(10),
+        imageUrl: z.string().url().or(z.literal("")).default(""),
+        summary: z.string().min(10),
+        content: z.string().min(10),
+        documentUrl: z.string().url().or(z.literal("")).default("")
+      })
+    ),
+    async (c) => {
+      const body = c.req.valid("json");
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      if (!session) return c.json({ error: "Unauthorized" }, 401);
+      const email = (session.email || "").trim().toLowerCase();
+      if (!email) return c.json({ error: "Forbidden" }, 403);
+
+      const id = Number(c.req.param("id"));
+      const existing = await db.select().from(news).where(eq(news.id, id)).get();
+      if (!existing) return c.json({ error: "Not found" }, 404);
+      if ((existing.createdByEmail || "").trim().toLowerCase() !== email) return c.json({ error: "Hanya penulis berita yang bisa mengedit." }, 403);
+
+      const me = await db.select().from(members).where(eq(members.email, email)).get();
+      const status = parseMembershipStatus(me?.membershipStatus);
+      if (!me || status !== "approved") return c.json({ error: "Akses khusus anggota aktif." }, 403);
+
+      await db
+        .update(news)
+        .set({ ...body, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
+        .where(eq(news.id, id));
+      const updated = await db.select().from(news).where(eq(news.id, id)).get();
+      return c.json(updated);
     }
   );
 

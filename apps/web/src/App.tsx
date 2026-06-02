@@ -26,6 +26,7 @@ export default function App() {
               <Route path="/anggota" element={<AnggotaPage />} />
               <Route path="/kegiatan" element={<KegiatanPage />} />
               <Route path="/berita" element={<BeritaPage />} />
+              <Route path="/berita/:permalink" element={<BeritaPage />} />
               <Route path="/portofolio" element={<PortofolioPage />} />
 
               <Route

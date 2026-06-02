@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ExternalLink, FilePlus2, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, ExternalLink, FilePlus2, Pencil, Search, Trash2 } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "@/api/client";
 import type { CommentItem, News, ReactionItem } from "@/types";
 import { useAppData } from "@/state/AppDataContext";
@@ -28,15 +29,38 @@ function parseUploadErrorMessage(error: unknown, fallback: string) {
   return raw;
 }
 
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+function newsPermalink(item: News) {
+  const slug = slugify(item.title) || "berita";
+  return `/berita/${item.id}-${slug}`;
+}
+
+function parsePermalinkId(raw?: string) {
+  const match = (raw || "").match(/^(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
 export function BeritaPage() {
+  const navigate = useNavigate();
+  const { permalink } = useParams();
   const { isApprovedMember, user } = useAuth();
-  const { news, loading, addNews, removeNews } = useAppData();
+  const { news, loading, addNews, patchNews, removeNews } = useAppData();
   const canManageNews = hasRole(user, "admin");
 
   const [newsQ, setNewsQ] = useState("");
   const [newsCategory, setNewsCategory] = useState("All");
 
   const [openNewsCreate, setOpenNewsCreate] = useState(false);
+  const [openNewsEdit, setOpenNewsEdit] = useState(false);
   const [openNewsDetail, setOpenNewsDetail] = useState(false);
   const [selectedNews, setSelectedNews] = useState<News | null>(null);
   const [comments, setComments] = useState<CommentItem[]>([]);
@@ -61,7 +85,21 @@ export function BeritaPage() {
     content: "",
     documentUrl: ""
   });
+  const [editNewsForm, setEditNewsForm] = useState({
+    title: "",
+    category: "Pengumuman",
+    author: "",
+    date: new Date().toISOString().slice(0, 10),
+    imageUrl: "",
+    summary: "",
+    content: "",
+    documentUrl: ""
+  });
   const [saving, setSaving] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const canEditSelectedNews = Boolean(
+    selectedNews?.createdByEmail && user?.email && selectedNews.createdByEmail.trim().toLowerCase() === user.email.trim().toLowerCase()
+  );
 
   const filteredNews = useMemo(() => {
     const q = newsQ.trim().toLowerCase();
@@ -74,8 +112,28 @@ export function BeritaPage() {
   }, [news, newsCategory, newsQ]);
 
   function openNewsModal(n: News) {
-    setSelectedNews(n);
-    setOpenNewsDetail(true);
+    navigate(newsPermalink(n));
+  }
+
+  function closeNewsDetail(open: boolean) {
+    setOpenNewsDetail(open);
+    if (!open && permalink) navigate("/berita");
+  }
+
+  function openEditNewsModal(item: News) {
+    setSelectedNews(item);
+    setEditNewsForm({
+      title: item.title || "",
+      category: item.category || "Pengumuman",
+      author: item.author || "",
+      date: item.date || new Date().toISOString().slice(0, 10),
+      imageUrl: item.imageUrl || "",
+      summary: item.summary || "",
+      content: item.content || "",
+      documentUrl: item.documentUrl || ""
+    });
+    setOpenNewsDetail(false);
+    setOpenNewsEdit(true);
   }
 
   useEffect(() => {
@@ -93,6 +151,45 @@ export function BeritaPage() {
       cancelled = true;
     };
   }, [openNewsDetail, selectedNews]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const id = parsePermalinkId(permalink);
+    if (!permalink) return;
+    if (!id) {
+      navigate("/berita", { replace: true });
+      return;
+    }
+
+    const existing = news.find((item) => item.id === id);
+    if (existing) {
+      setSelectedNews(existing);
+      setOpenNewsDetail(true);
+      const canonicalPath = newsPermalink(existing);
+      if (`/berita/${permalink}` !== canonicalPath) navigate(canonicalPath, { replace: true });
+      return;
+    }
+
+    (async () => {
+      try {
+        const row = await api<News>(`/api/news/${id}`);
+        if (cancelled) return;
+        setSelectedNews(row);
+        setOpenNewsDetail(true);
+        const canonicalPath = newsPermalink(row);
+        if (`/berita/${permalink}` !== canonicalPath) navigate(canonicalPath, { replace: true });
+      } catch {
+        if (!cancelled) {
+          alert("Berita tidak ditemukan.");
+          navigate("/berita", { replace: true });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, news, permalink]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +218,22 @@ export function BeritaPage() {
       alert(e instanceof Error ? e.message : "Gagal mengirim berita.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function submitEditNews() {
+    if (!selectedNews) return;
+    setSavingEdit(true);
+    try {
+      const updated = await api<News>(`/api/news/${selectedNews.id}`, { method: "PATCH", body: JSON.stringify(editNewsForm) });
+      patchNews(updated);
+      setSelectedNews(updated);
+      setOpenNewsEdit(false);
+      alert("Berita berhasil diperbarui dan menunggu review admin/pengurus.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Gagal memperbarui berita.");
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -177,6 +290,7 @@ export function BeritaPage() {
       if (selectedNews?.id === item.id) {
         setSelectedNews(null);
         setOpenNewsDetail(false);
+        if (permalink) navigate("/berita");
       }
       setDeleteTarget(null);
       alert("Berita berhasil dihapus.");
@@ -361,7 +475,7 @@ export function BeritaPage() {
         )}
       </div>
 
-      <Dialog open={openNewsDetail} onOpenChange={setOpenNewsDetail}>
+      <Dialog open={openNewsDetail} onOpenChange={closeNewsDetail}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Detail Berita</DialogTitle>
@@ -380,6 +494,11 @@ export function BeritaPage() {
                   </div>
                   <div className="mt-3 text-2xl font-extrabold text-slate-800 dark:text-white">{selectedNews.title}</div>
                   <MarkdownContent value={selectedNews.content || selectedNews.summary} className="mt-4" />
+                  {canEditSelectedNews ? (
+                    <Button type="button" variant="secondary" className="mt-6 w-full" disabled={savingEdit} onClick={() => openEditNewsModal(selectedNews)}>
+                      <Pencil className="h-4 w-4" /> Edit Berita
+                    </Button>
+                  ) : null}
                   {canManageNews ? (
                     <Button
                       type="button"
@@ -400,6 +519,22 @@ export function BeritaPage() {
                       Buka Dokumen Terkait <ExternalLink className="h-4 w-4" />
                     </a>
                   ) : null}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="mt-3 w-full"
+                    onClick={async () => {
+                      const url = `${window.location.origin}${newsPermalink(selectedNews)}`;
+                      try {
+                        await navigator.clipboard?.writeText(url);
+                        alert("Permalink berita sudah disalin.");
+                      } catch {
+                        alert(url);
+                      }
+                    }}
+                  >
+                    Salin Permalink
+                  </Button>
                   <div className="mt-8 border-t border-slate-200 dark:border-slate-700 pt-6 space-y-4">
                     <div className="text-sm font-extrabold text-slate-800 dark:text-slate-100">Komentar</div>
                     {!user ? <div className="text-xs text-amber-700 dark:text-amber-300">Silakan masuk untuk menulis komentar.</div> : null}
@@ -488,6 +623,61 @@ export function BeritaPage() {
             >
               <Trash2 className="h-4 w-4" /> Hapus
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openNewsEdit && Boolean(selectedNews)} onOpenChange={setOpenNewsEdit}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit Berita</DialogTitle>
+            <DialogDescription>Hanya penulis berita yang bisa mengubah detail. Setelah disimpan, berita kembali menunggu review.</DialogDescription>
+          </DialogHeader>
+          <div className="px-6 pb-6 space-y-3 max-h-[70vh] overflow-y-auto">
+            <Input placeholder="Judul" value={editNewsForm.title} onChange={(e) => setEditNewsForm((v) => ({ ...v, title: e.target.value }))} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Select value={editNewsForm.category} onValueChange={(v) => setEditNewsForm((s) => ({ ...s, category: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Kategori" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.filter((c) => c !== "All").map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input placeholder="Penulis" value={editNewsForm.author} onChange={(e) => setEditNewsForm((v) => ({ ...v, author: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input type="date" value={editNewsForm.date} onChange={(e) => setEditNewsForm((v) => ({ ...v, date: e.target.value }))} />
+              <Input
+                placeholder="Link gambar (opsional)"
+                value={editNewsForm.imageUrl}
+                onChange={(e) => setEditNewsForm((v) => ({ ...v, imageUrl: e.target.value }))}
+              />
+            </div>
+            <Textarea placeholder="Ringkasan" value={editNewsForm.summary} onChange={(e) => setEditNewsForm((v) => ({ ...v, summary: e.target.value }))} />
+            <Textarea
+              placeholder="Isi berita (mendukung markdown)"
+              value={editNewsForm.content}
+              onChange={(e) => setEditNewsForm((v) => ({ ...v, content: e.target.value }))}
+              className="min-h-[180px]"
+            />
+            <Input
+              placeholder="Link dokumen (opsional)"
+              value={editNewsForm.documentUrl}
+              onChange={(e) => setEditNewsForm((v) => ({ ...v, documentUrl: e.target.value }))}
+            />
+            <div className="flex gap-2 justify-end">
+              <Button type="button" variant="secondary" disabled={savingEdit} onClick={() => setOpenNewsEdit(false)}>
+                Batal
+              </Button>
+              <Button type="button" disabled={savingEdit} onClick={() => void submitEditNews()}>
+                {savingEdit ? "Menyimpan..." : "Simpan Perubahan"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

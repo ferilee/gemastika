@@ -292,6 +292,48 @@ describe("api endpoints", () => {
     });
     expect(newsCreateRes.status).toBe(201);
     const createdNews = (await newsCreateRes.json()) as { id: number };
+    expect((await app.request(`http://local/api/news/${createdNews.id}`)).status).toBe(404);
+    expect((await app.request(`http://local/api/news/${createdNews.id}`, { headers: { cookie: anggotaCookie } })).status).toBe(200);
+    const pengurusCookie = await getCookie(app, "pengurus");
+    const adminCookie = await getCookie(app, "admin");
+    expect((await app.request(`http://local/api/news/${createdNews.id}`, { headers: { cookie: pengurusCookie } })).status).toBe(200);
+    const editPayload = {
+      title: "Berita baru diedit",
+      category: "Umum",
+      author: "Anggota",
+      date: "2026-01-03",
+      summary: "Ringkasan berita yang sudah diperbarui dan cukup panjang",
+      content: "Konten berita yang sudah diperbarui dan cukup panjang untuk lolos validasi",
+      imageUrl: "",
+      documentUrl: ""
+    };
+    expect(
+      (
+        await app.request(`http://local/api/news/${createdNews.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", cookie: pengurusCookie },
+          body: JSON.stringify(editPayload)
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await app.request(`http://local/api/news/${createdNews.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", cookie: adminCookie },
+          body: JSON.stringify(editPayload)
+        })
+      ).status
+    ).toBe(403);
+    const editRes = await app.request(`http://local/api/news/${createdNews.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: anggotaCookie },
+      body: JSON.stringify(editPayload)
+    });
+    expect(editRes.status).toBe(200);
+    const editedNews = (await editRes.json()) as { title: string; publishStatus: string };
+    expect(editedNews.title).toBe("Berita baru diedit");
+    expect(editedNews.publishStatus).toBe("pending");
     expect(
       (
         await app.request("http://local/api/portfolios", {
@@ -310,9 +352,7 @@ describe("api endpoints", () => {
     ).toBe(201);
 
     expect((await app.request(`http://local/api/admin/news/${createdNews.id}`, { method: "DELETE", headers: { cookie: anggotaCookie } })).status).toBe(403);
-    const pengurusCookie = await getCookie(app, "pengurus");
     expect((await app.request(`http://local/api/admin/news/${createdNews.id}`, { method: "DELETE", headers: { cookie: pengurusCookie } })).status).toBe(403);
-    const adminCookie = await getCookie(app, "admin");
     expect((await app.request(`http://local/api/admin/news/${createdNews.id}`, { method: "DELETE", headers: { cookie: adminCookie } })).status).toBe(200);
     expect((await app.request(`http://local/api/news/${createdNews.id}`)).status).toBe(404);
 
