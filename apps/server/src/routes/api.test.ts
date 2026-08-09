@@ -420,6 +420,16 @@ describe("api endpoints", () => {
     expect((await app.request(`http://local/api/learning-resource-favorites/${created.id}/toggle`, { method: "POST" })).status).toBe(401);
     expect((await app.request(`http://local/api/learning-resource-favorites/${created.id}/toggle`, { method: "POST", headers: { cookie: anggotaCookie } })).status).toBe(200);
     expect((await app.request(`http://local/api/learning-resource-favorites`, { headers: { cookie: anggotaCookie } })).status).toBe(200);
+    expect((await app.request("http://local/api/learning-resource-collections")).status).toBe(200);
+    const collectionRes = await app.request("http://local/api/learning-resource-collections", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: anggotaCookie },
+      body: JSON.stringify({ name: "Materi Semester Genap" })
+    });
+    expect(collectionRes.status).toBe(201);
+    const collection = (await collectionRes.json()) as { id: number };
+    expect((await app.request(`http://local/api/learning-resource-collections/${collection.id}/items/${created.id}/toggle`, { method: "POST", headers: { cookie: anggotaCookie } })).status).toBe(200);
+    expect((await app.request("http://local/api/learning-resource-collections", { headers: { cookie: anggotaCookie } })).status).toBe(200);
     expect((await app.request(`http://local/api/learning-resource-ratings?resourceId=${created.id}`)).status).toBe(200);
     expect(
       (

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BookOpen, ExternalLink, FilePlus2, FileText, Heart, Pencil, Search, Star, Trash2, Upload } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "@/api/client";
-import type { CommentItem, LearningResource, LearningResourceCategory, LearningResourceVersion } from "@/types";
+import type { CommentItem, LearningResource, LearningResourceCategory, LearningResourceCollection, LearningResourceVersion, Member } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -64,6 +64,12 @@ export function BankPembelajaranPage() {
   const [phase, setPhase] = useState("All");
   const [semester, setSemester] = useState("All");
   const [curriculum, setCurriculum] = useState("All");
+  const [contributor, setContributor] = useState("All");
+  const [members, setMembers] = useState<Member[]>([]);
+  const [sort, setSort] = useState("latest");
+  const [collections, setCollections] = useState<LearningResourceCollection[]>([]);
+  const [newCollectionName, setNewCollectionName] = useState("");
+  const [activeCollectionId, setActiveCollectionId] = useState("");
   const [selected, setSelected] = useState<LearningResource | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -97,6 +103,8 @@ export function BankPembelajaranPage() {
   }, [user?.email]);
 
   useEffect(() => { if (!user) { setFavorites([]); return; } void api<number[]>("/api/learning-resource-favorites").then(setFavorites).catch(() => setFavorites([])); }, [user]);
+  useEffect(() => { if (!user) { setCollections([]); return; } void api<LearningResourceCollection[]>("/api/learning-resource-collections").then(setCollections).catch(() => setCollections([])); }, [user]);
+  useEffect(() => { void api<Member[]>("/api/members").then(setMembers).catch(() => setMembers([])); }, []);
 
   useEffect(() => {
     const id = permalinkId(resourcePermalink);
@@ -108,12 +116,13 @@ export function BankPembelajaranPage() {
 
   const filteredResources = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return resources.filter((item) => {
+    const rows = resources.filter((item) => {
       const matchesQuery = !q || [item.title, item.topic, item.description, item.grade, item.curriculum].join(" ").toLowerCase().includes(q);
       const matchesTags = !q || item.tags.toLowerCase().includes(q) || matchesQuery;
-      return matchesTags && (category === "All" || item.category === category) && (phase === "All" || item.phase === phase) && (semester === "All" || item.semester === semester) && (curriculum === "All" || item.curriculum === curriculum);
+      return matchesTags && (category === "All" || item.category === category) && (phase === "All" || item.phase === phase) && (semester === "All" || item.semester === semester) && (curriculum === "All" || item.curriculum === curriculum) && (contributor === "All" || item.createdByEmail === contributor);
     });
-  }, [category, curriculum, phase, query, resources, semester]);
+    return rows.sort((a, b) => sort === "popular" ? (b.viewCount + b.downloadCount) - (a.viewCount + a.downloadCount) : sort === "downloads" ? b.downloadCount - a.downloadCount : b.id - a.id);
+  }, [category, contributor, curriculum, phase, query, resources, semester, sort]);
 
   const canEditSelected = Boolean(selected?.createdByEmail && user?.email && selected.createdByEmail.toLowerCase() === user.email.toLowerCase());
 
@@ -230,6 +239,8 @@ export function BankPembelajaranPage() {
   async function setResourceRating(value: number) { if (!selected) return; if (!user) { alert("Silakan masuk terlebih dahulu."); return; } setRating(await api("/api/learning-resource-ratings", { method: "POST", body: JSON.stringify({ resourceId: selected.id, rating: value }) })); }
   async function submitComment() { if (!selected || !commentInput.trim()) return; if (!user) { alert("Silakan masuk terlebih dahulu."); return; } const created = await api<CommentItem>("/api/comments", { method: "POST", body: JSON.stringify({ targetType: "learning_resource", targetId: selected.id, content: commentInput.trim() }) }); setComments((items) => [...items, created]); setCommentInput(""); }
   async function registerDownload() { if (!selected) return; const updated = await api<LearningResource>(`/api/learning-resources/${selected.id}/access`, { method: "POST", body: JSON.stringify({ type: "download" }) }); setSelected(updated); setResources((items) => items.map((item) => item.id === updated.id ? updated : item)); }
+  async function createCollection() { if (!newCollectionName.trim()) return; const created = await api<LearningResourceCollection>("/api/learning-resource-collections", { method: "POST", body: JSON.stringify({ name: newCollectionName }) }); setCollections((items) => [created, ...items]); setActiveCollectionId(String(created.id)); setNewCollectionName(""); }
+  async function toggleCollection(collectionId: number, resource = selected) { if (!resource) return; const result = await api<{ active: boolean }>(`/api/learning-resource-collections/${collectionId}/items/${resource.id}/toggle`, { method: "POST" }); setCollections((items) => items.map((collection) => collection.id !== collectionId ? collection : { ...collection, resourceIds: result.active ? [...collection.resourceIds, resource.id] : collection.resourceIds.filter((id) => id !== resource.id) })); }
 
   return (
     <>
@@ -252,7 +263,10 @@ export function BankPembelajaranPage() {
         <Select value={phase} onValueChange={setPhase}><SelectTrigger><SelectValue placeholder="Fase" /></SelectTrigger><SelectContent><SelectItem value="All">Semua fase</SelectItem>{PHASES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2"><Select value={semester} onValueChange={setSemester}><SelectTrigger><SelectValue placeholder="Semester" /></SelectTrigger><SelectContent><SelectItem value="All">Semua semester</SelectItem><SelectItem value="Ganjil">Ganjil</SelectItem><SelectItem value="Genap">Genap</SelectItem></SelectContent></Select><Select value={curriculum} onValueChange={setCurriculum}><SelectTrigger><SelectValue placeholder="Kurikulum" /></SelectTrigger><SelectContent><SelectItem value="All">Semua kurikulum</SelectItem><SelectItem value="Kurikulum Merdeka">Kurikulum Merdeka</SelectItem><SelectItem value="Kurikulum 2013">Kurikulum 2013</SelectItem></SelectContent></Select></div>
+      <div className="mt-3 max-w-xs"><Select value={sort} onValueChange={setSort}><SelectTrigger><SelectValue placeholder="Urutkan" /></SelectTrigger><SelectContent><SelectItem value="latest">Terbaru</SelectItem><SelectItem value="popular">Paling populer</SelectItem><SelectItem value="downloads">Paling banyak dibuka</SelectItem></SelectContent></Select></div>
+      <div className="mt-3 max-w-sm"><Select value={contributor} onValueChange={setContributor}><SelectTrigger><SelectValue placeholder="Kontributor" /></SelectTrigger><SelectContent><SelectItem value="All">Semua kontributor</SelectItem>{Array.from(new Set(resources.map((item) => item.createdByEmail).filter(Boolean))).map((email) => <SelectItem key={email} value={email}>{members.find((member) => member.email.toLowerCase() === email.toLowerCase())?.name || email}</SelectItem>)}</SelectContent></Select></div>
       <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">Menampilkan {filteredResources.length} materi.</div>
+      {user ? <div className="mt-3 flex flex-wrap items-center gap-2 text-xs"><Input className="h-8 w-48" value={newCollectionName} onChange={(event) => setNewCollectionName(event.target.value)} placeholder="Nama koleksi baru" /><Button size="sm" variant="secondary" onClick={() => void createCollection()}>Buat Koleksi</Button>{collections.length ? <Select value={activeCollectionId || String(collections[0].id)} onValueChange={setActiveCollectionId}><SelectTrigger className="h-8 w-44"><SelectValue placeholder="Pilih koleksi" /></SelectTrigger><SelectContent>{collections.map((collection) => <SelectItem key={collection.id} value={String(collection.id)}>{collection.name} ({collection.resourceIds.length})</SelectItem>)}</SelectContent></Select> : null}</div> : null}
 
       <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
         {loading ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-72 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />) : null}
@@ -267,10 +281,10 @@ export function BankPembelajaranPage() {
                 <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-mgmp-primary/10 px-2.5 py-1 text-[11px] font-extrabold text-mgmp-primary">{item.category}</span>{item.publishStatus !== "approved" ? <span className={item.publishStatus === "pending" ? "text-[11px] font-bold text-amber-700 dark:text-amber-300" : "text-[11px] font-bold text-rose-700 dark:text-rose-300"}>{resourceStatus(item.publishStatus)}</span> : null}</div>
                 <div className="mt-3 line-clamp-2 text-lg font-extrabold text-slate-800 dark:text-white">{item.title}</div>
                 <div className="mt-2 line-clamp-3 text-sm text-slate-500 dark:text-slate-400">{item.description}</div>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-500 dark:text-slate-300"><span>{item.phase}</span><span>•</span><span>{item.grade}</span><span>•</span><span>{item.topic}</span></div>{item.tags ? <div className="mt-2 line-clamp-1 text-xs text-mgmp-primary">#{item.tags.split(",").join(" #")}</div> : null}
+                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-500 dark:text-slate-300"><span>{item.phase}</span><span>•</span><span>{item.grade}</span><span>•</span><span>{item.topic}</span></div>{item.tags ? <div className="mt-2 line-clamp-1 text-xs text-mgmp-primary">#{item.tags.split(",").join(" #")}</div> : null}<div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">Kontributor: {members.find((member) => member.email.toLowerCase() === item.createdByEmail.toLowerCase())?.name || "MGMP Matematika"}</div>
               </CardContent>
             </button>
-            {canManage ? <div className="px-5 pb-5 text-right"><Button size="sm" className="bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400" disabled={deleting === item.id} onClick={() => setDeleteTarget(item)}><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Hapus</span></Button></div> : null}
+            <div className="flex justify-between gap-2 px-5 pb-5">{collections.length ? <Button size="sm" variant="secondary" onClick={() => { const collection = collections.find((row) => row.id === Number(activeCollectionId)) || collections[0]; void toggleCollection(collection.id, item); }}><Heart className="h-4 w-4" /> Simpan ke Koleksi</Button> : <span />}{canManage ? <Button size="sm" className="bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400" disabled={deleting === item.id} onClick={() => setDeleteTarget(item)}><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Hapus</span></Button> : null}</div>
           </Card>
         ))}
       </div>

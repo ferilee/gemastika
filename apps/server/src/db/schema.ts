@@ -154,6 +154,24 @@ export const learningResourceRatings = sqliteTable(
   (t) => ({ resourceUserUnique: uniqueIndex("learning_resource_ratings_resource_user_unique").on(t.resourceId, t.userKey) })
 );
 
+export const learningResourceCollections = sqliteTable("learning_resource_collections", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+  ownerKey: text("owner_key").notNull(),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+});
+
+export const learningResourceCollectionItems = sqliteTable(
+  "learning_resource_collection_items",
+  {
+    id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+    collectionId: integer("collection_id", { mode: "number" }).notNull(),
+    resourceId: integer("resource_id", { mode: "number" }).notNull(),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+  },
+  (t) => ({ collectionResourceUnique: uniqueIndex("learning_resource_collection_items_collection_resource_unique").on(t.collectionId, t.resourceId) })
+);
+
 export const homeQuickLinks = sqliteTable("home_quick_links", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   title: text("title").notNull(),

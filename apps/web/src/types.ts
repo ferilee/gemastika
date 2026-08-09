@@ -87,6 +87,7 @@ export type LearningResource = {
 };
 
 export type LearningResourceVersion = { id: number; resourceId: number; version: number; resourceUrl: string; fileName: string; storageKey: string; changeNote: string; createdByEmail: string; createdAt: string };
+export type LearningResourceCollection = { id: number; ownerKey: string; name: string; createdAt: string; resourceIds: number[] };
 
 export type BoardMember = {
   id: number;

@@ -11,6 +11,8 @@ import {
   comments,
   homeQuickLinks,
   homeSettings,
+  learningResourceCollectionItems,
+  learningResourceCollections,
   learningResourceFavorites,
   learningResourceRatings,
   learningResourceVersions,
@@ -1524,6 +1526,38 @@ export function apiRouter(db: Db) {
     if (!userKey) return c.json([]);
     const rows = await db.select({ resourceId: learningResourceFavorites.resourceId }).from(learningResourceFavorites).where(eq(learningResourceFavorites.userKey, userKey));
     return c.json(rows.map((row) => row.resourceId));
+  });
+
+  api.get("/learning-resource-collections", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const ownerKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!ownerKey) return c.json([]);
+    const rows = await db.select().from(learningResourceCollections).where(eq(learningResourceCollections.ownerKey, ownerKey)).orderBy(desc(learningResourceCollections.id));
+    const result = await Promise.all(rows.map(async (row) => ({ ...row, resourceIds: (await db.select({ resourceId: learningResourceCollectionItems.resourceId }).from(learningResourceCollectionItems).where(eq(learningResourceCollectionItems.collectionId, row.id))).map((item) => item.resourceId) })));
+    return c.json(result);
+  });
+
+  api.post("/learning-resource-collections", zValidator("json", z.object({ name: z.string().trim().min(2).max(80) })), async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const ownerKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!ownerKey) return c.json({ error: "Silakan masuk untuk membuat koleksi." }, 401);
+    const [created] = await db.insert(learningResourceCollections).values({ ownerKey, name: c.req.valid("json").name }).returning();
+    return c.json({ ...created, resourceIds: [] }, 201);
+  });
+
+  api.post("/learning-resource-collections/:id/items/:resourceId/toggle", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const ownerKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!ownerKey) return c.json({ error: "Silakan masuk terlebih dahulu." }, 401);
+    const collectionId = Number(c.req.param("id")); const resourceId = Number(c.req.param("resourceId"));
+    const collection = await db.select().from(learningResourceCollections).where(and(eq(learningResourceCollections.id, collectionId), eq(learningResourceCollections.ownerKey, ownerKey))).get();
+    if (!collection) return c.json({ error: "Koleksi tidak ditemukan." }, 404);
+    const existing = await db.select().from(learningResourceCollectionItems).where(and(eq(learningResourceCollectionItems.collectionId, collectionId), eq(learningResourceCollectionItems.resourceId, resourceId))).get();
+    if (existing) { await db.delete(learningResourceCollectionItems).where(eq(learningResourceCollectionItems.id, existing.id)); return c.json({ active: false }); }
+    await db.insert(learningResourceCollectionItems).values({ collectionId, resourceId }); return c.json({ active: true });
   });
 
   api.post("/learning-resource-favorites/:id/toggle", async (c) => {

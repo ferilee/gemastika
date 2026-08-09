@@ -260,4 +260,7 @@ export async function ensureRuntimeSchema(db: Db) {
     )
   `);
   await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_resource_ratings_resource_user_unique ON learning_resource_ratings (resource_id, user_key)`);
+  await db.run(sql`CREATE TABLE IF NOT EXISTS learning_resource_collections (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, owner_key text NOT NULL, name text NOT NULL, created_at text NOT NULL DEFAULT (datetime('now')))`);
+  await db.run(sql`CREATE TABLE IF NOT EXISTS learning_resource_collection_items (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, collection_id integer NOT NULL, resource_id integer NOT NULL, created_at text NOT NULL DEFAULT (datetime('now')))`);
+  await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_resource_collection_items_collection_resource_unique ON learning_resource_collection_items (collection_id, resource_id)`);
 }
