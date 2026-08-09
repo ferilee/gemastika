@@ -204,7 +204,7 @@ export function PortofolioPage() {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/api/uploads/image");
         xhr.withCredentials = true;
-        xhr.timeout = 20000;
+        xhr.timeout = 90000;
         xhr.upload.onprogress = (event) => {
           if (!event.lengthComputable) return;
           const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
@@ -219,7 +219,7 @@ export function PortofolioPage() {
           reject(new Error(xhr.responseText || `Upload gagal (${xhr.status}).`));
         };
         xhr.onerror = () => reject(new Error("Koneksi upload gagal."));
-        xhr.ontimeout = () => reject(new Error("Upload gambar timeout. Cek koneksi RustFS/server."));
+        xhr.ontimeout = () => reject(new Error("Upload gambar timeout. Cek koneksi RustFS/server atau coba gambar yang lebih kecil."));
         xhr.send(form);
       });
       let json: { url?: string; error?: string } = {};

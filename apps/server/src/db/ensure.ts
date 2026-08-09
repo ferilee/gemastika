@@ -196,4 +196,27 @@ export async function ensureRuntimeSchema(db: Db) {
   if (!portfolioColumns.has("created_by_email")) {
     await db.run(sql`ALTER TABLE portfolios ADD created_by_email text DEFAULT '' NOT NULL`);
   }
+
+  await db.run(sql`
+    CREATE TABLE IF NOT EXISTS learning_resources (
+      id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+      title text NOT NULL,
+      category text NOT NULL DEFAULT 'RPP / Modul Ajar',
+      description text NOT NULL DEFAULT '',
+      phase text NOT NULL DEFAULT '',
+      grade text NOT NULL DEFAULT '',
+      topic text NOT NULL DEFAULT '',
+      semester text NOT NULL DEFAULT '',
+      curriculum text NOT NULL DEFAULT 'Kurikulum Merdeka',
+      source_type text NOT NULL DEFAULT 'file',
+      resource_url text NOT NULL DEFAULT '',
+      file_name text NOT NULL DEFAULT '',
+      thumbnail_url text NOT NULL DEFAULT '',
+      created_by_email text NOT NULL DEFAULT '',
+      publish_status text NOT NULL DEFAULT 'approved',
+      reviewed_by text NOT NULL DEFAULT '',
+      reviewed_at text NOT NULL DEFAULT '',
+      created_at text NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
 }

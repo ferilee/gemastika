@@ -1,5 +1,5 @@
 import { Outlet, NavLink, Link } from "react-router-dom";
-import { CalendarDays, Laptop2, Newspaper, Users, User, Shield, AlertCircle, Bell } from "lucide-react";
+import { BookOpen, CalendarDays, Laptop2, Newspaper, Users, User, Shield, AlertCircle, Bell } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Heart, MapPin, Mail, Instagram, Facebook, Youtube } from "lucide-react";
@@ -10,7 +10,7 @@ import { GlobalAlertDialog } from "@/components/GlobalAlertDialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { api } from "@/api/client";
-import type { Member } from "@/types";
+import type { LearningResource, Member } from "@/types";
 
 function NavItem({
   to,
@@ -125,14 +125,16 @@ export function AppLayout() {
         return;
       }
       try {
-        const [allNews, allPortfolios] = await Promise.all([
+        const [allNews, allPortfolios, allResources] = await Promise.all([
           api<Array<{ publishStatus?: string }>>("/api/news?includeAll=1"),
-          api<Array<{ publishStatus?: string }>>("/api/portfolios?includeAll=1&limit=60")
+          api<Array<{ publishStatus?: string }>>("/api/portfolios?includeAll=1&limit=60"),
+          api<LearningResource[]>("/api/learning-resources?includeAll=1")
         ]);
         if (cancelled) return;
         const pendingNews = allNews.filter((n) => (n.publishStatus || "approved") === "pending").length;
         const pendingPortfolios = allPortfolios.filter((p) => (p.publishStatus || "approved") === "pending").length;
-        setPendingApprovalCount(pendingNews + pendingPortfolios);
+        const pendingResources = allResources.filter((item) => (item.publishStatus || "approved") === "pending").length;
+        setPendingApprovalCount(pendingNews + pendingPortfolios + pendingResources);
       } catch {
         if (!cancelled) setPendingApprovalCount(0);
       }
@@ -180,6 +182,7 @@ export function AppLayout() {
             <NavItem to="/kegiatan" label="Kegiatan" />
             <NavItem to="/berita" label="Berita" />
             <NavItem to="/portofolio" label="Portofolio" />
+            <NavItem to="/bank-pembelajaran" label="Bank Pembelajaran" />
             {user && showDashboardNav ? <NavItem to={dashboardLink} label="Dashboard" showDot={pendingApprovalCount > 0} /> : null}
             {user && !profileRegistered ? (
               <div className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-amber-700 dark:bg-amber-500/15 dark:text-amber-200">
@@ -233,12 +236,13 @@ export function AppLayout() {
       </header>
 
       <nav className="fixed bottom-0 left-0 z-40 w-full h-16 md:hidden border-t border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#0b1220]/80 backdrop-blur">
-        <div className={["grid h-full text-[10px] font-extrabold", showAdminBottomItem ? "grid-cols-6" : "grid-cols-5"].join(" ")}>
+        <div className={["grid h-full text-[10px] font-extrabold", showAdminBottomItem ? "grid-cols-7" : "grid-cols-6"].join(" ")}>
           <BottomItem to="/" label="Beranda" Icon={CalendarDays} />
           <BottomItem to="/profil" label="Profil" Icon={User} />
           <BottomItem to="/anggota" label="Anggota" Icon={Users} />
           <BottomItem to="/berita" label="Berita" Icon={Newspaper} />
           <BottomItem to="/portofolio" label="Karya" Icon={Laptop2} />
+          <BottomItem to="/bank-pembelajaran" label="Bank" Icon={BookOpen} />
           {showAdminBottomItem ? <BottomItem to="/dashboard/admin" label="Admin" Icon={Shield} /> : null}
         </div>
       </nav>

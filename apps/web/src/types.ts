@@ -58,6 +58,29 @@ export type Portfolio = {
   reviewedAt: string;
 };
 
+export type LearningResourceCategory = "RPP / Modul Ajar" | "Materi Pembelajaran" | "Asesmen Interaktif" | "LKPD Interaktif";
+
+export type LearningResource = {
+  id: number;
+  title: string;
+  category: LearningResourceCategory;
+  description: string;
+  phase: string;
+  grade: string;
+  topic: string;
+  semester: string;
+  curriculum: string;
+  sourceType: "file" | "link";
+  resourceUrl: string;
+  fileName: string;
+  thumbnailUrl: string;
+  createdByEmail: string;
+  publishStatus: "pending" | "approved" | "rejected";
+  reviewedBy: string;
+  reviewedAt: string;
+  createdAt: string;
+};
+
 export type BoardMember = {
   id: number;
   memberId: number;

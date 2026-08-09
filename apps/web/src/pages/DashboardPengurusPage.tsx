@@ -1,8 +1,8 @@
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarCheck, Newspaper, UserPlus } from "lucide-react";
+import { BookOpen, CalendarCheck, Newspaper, UserPlus } from "lucide-react";
 import { api } from "@/api/client";
-import type { Member, MembershipStatus, News, Portfolio } from "@/types";
+import type { LearningResource, Member, MembershipStatus, News, Portfolio } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAppData } from "@/state/AppDataContext";
@@ -13,6 +13,7 @@ export function DashboardPengurusPage() {
   const [savingId, setSavingId] = useState<number | null>(null);
   const [pendingNews, setPendingNews] = useState<News[]>([]);
   const [pendingPortfolios, setPendingPortfolios] = useState<Portfolio[]>([]);
+  const [pendingResources, setPendingResources] = useState<LearningResource[]>([]);
   const [savingContentKey, setSavingContentKey] = useState<string>("");
   const upcoming = agendas.find((a) => a.date) || null;
   const pendingMembers = useMemo(() => members.filter((m) => (m.membershipStatus || "approved") === "pending"), [members]);
@@ -21,17 +22,20 @@ export function DashboardPengurusPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [allNews, allPortfolios] = await Promise.all([
+        const [allNews, allPortfolios, allResources] = await Promise.all([
           api<News[]>("/api/news?includeAll=1"),
-          api<Portfolio[]>("/api/portfolios?includeAll=1&limit=60")
+          api<Portfolio[]>("/api/portfolios?includeAll=1&limit=60"),
+          api<LearningResource[]>("/api/learning-resources?includeAll=1")
         ]);
         if (cancelled) return;
         setPendingNews(allNews.filter((n) => (n.publishStatus || "approved") === "pending"));
         setPendingPortfolios(allPortfolios.filter((p) => (p.publishStatus || "approved") === "pending"));
+        setPendingResources(allResources.filter((item) => (item.publishStatus || "approved") === "pending"));
       } catch {
         if (!cancelled) {
           setPendingNews([]);
           setPendingPortfolios([]);
+          setPendingResources([]);
         }
       }
     })();
@@ -78,6 +82,19 @@ export function DashboardPengurusPage() {
       await reload();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Gagal meninjau portofolio.");
+    } finally {
+      setSavingContentKey("");
+    }
+  }
+
+  async function reviewResource(item: LearningResource, status: "approved" | "rejected") {
+    const key = `resource-${item.id}-${status}`;
+    setSavingContentKey(key);
+    try {
+      await api(`/api/admin/learning-resources/${item.id}/review`, { method: "POST", body: JSON.stringify({ status }) });
+      setPendingResources((prev) => prev.filter((resource) => resource.id !== item.id));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Gagal meninjau materi.");
     } finally {
       setSavingContentKey("");
     }
@@ -153,6 +170,29 @@ export function DashboardPengurusPage() {
                     Tolak
                   </Button>
                 </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle className="text-mgmp-blue dark:text-white">Review Bank Pembelajaran</CardTitle>
+          <Badge className={pendingResources.length === 0 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200" : "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200"}>
+            {pendingResources.length} Pending
+          </Badge>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {pendingResources.length === 0 ? (
+            <div className="text-sm text-slate-500 dark:text-slate-300">Tidak ada materi yang menunggu review.</div>
+          ) : (
+            pendingResources.map((item) => (
+              <div key={item.id} className="rounded-2xl border border-slate-200/70 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
+                <div className="flex items-start justify-between gap-3"><div><div className="font-extrabold text-slate-800 dark:text-white">{item.title}</div><div className="text-xs text-slate-500 dark:text-slate-400">{item.category} • {item.phase} • {item.grade}</div></div><BookOpen className="h-5 w-5 shrink-0 text-mgmp-primary" /></div>
+                <div className="mt-2 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line">{item.description}</div>
+                <a href={item.resourceUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-bold text-mgmp-primary hover:underline">Buka materi untuk ditinjau</a>
+                <div className="mt-2 flex gap-2"><Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-500 dark:hover:bg-emerald-400" disabled={savingContentKey === `resource-${item.id}-approved`} onClick={() => void reviewResource(item, "approved")}>Approve</Button><Button size="sm" className="bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400" disabled={savingContentKey === `resource-${item.id}-rejected`} onClick={() => void reviewResource(item, "rejected")}>Tolak</Button></div>
               </div>
             ))
           )}

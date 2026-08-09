@@ -6,7 +6,7 @@ import { createDb } from "../db/client";
 import { ensureRuntimeSchema } from "../db/ensure";
 import { apiRouter } from "./api";
 import { setSession } from "../auth/session";
-import { agendas, members, news, portfolios } from "../db/schema";
+import { agendas, learningResources, members, news, portfolios } from "../db/schema";
 
 type LoginKind = "admin" | "pengurus" | "anggota" | "guest";
 
@@ -91,6 +91,21 @@ async function buildTestApp() {
       description: "Deskripsi karya yang cukup panjang untuk validasi endpoint."
     })
     .returning();
+  const [learningResource] = await db
+    .insert(learningResources)
+    .values({
+      title: "Modul Ajar Aljabar",
+      category: "RPP / Modul Ajar",
+      description: "Modul ajar aljabar untuk penguatan konsep kelas sepuluh.",
+      phase: "Fase E",
+      grade: "Kelas X",
+      topic: "Aljabar",
+      semester: "Ganjil",
+      curriculum: "Kurikulum Merdeka",
+      sourceType: "link",
+      resourceUrl: "https://example.test/modul-aljabar"
+    })
+    .returning();
 
   const app = new Hono();
   app.get("/__test/login/:kind", async (c) => {
@@ -113,7 +128,7 @@ async function buildTestApp() {
   });
   app.route("/", apiRouter(db));
 
-  return { app, seed: { agenda, newsRow, portfolio } };
+  return { app, seed: { agenda, newsRow, portfolio, learningResource } };
 }
 
 async function getCookie(app: Hono, kind: LoginKind) {
@@ -145,6 +160,9 @@ describe("api endpoints", () => {
     form.append("scope", "news");
     form.append("file", new File(["abc"], "x.png", { type: "image/png" }));
     expect((await app.request("http://local/api/uploads/image", { method: "POST", body: form })).status).toBe(401);
+    const resourceForm = new FormData();
+    resourceForm.append("file", new File(["abc"], "materi.pdf", { type: "application/pdf" }));
+    expect((await app.request("http://local/api/uploads/resource", { method: "POST", body: resourceForm })).status).toBe(401);
     expect((await app.request("http://local/api/admin/rustfs-check")).status).toBe(403);
   });
 
@@ -361,6 +379,61 @@ describe("api endpoints", () => {
     const afterDeletePortfolios = await app.request("http://local/api/portfolios?limit=10");
     const rows = (await afterDeletePortfolios.json()) as Array<{ id: number }>;
     expect(rows.some((row) => row.id === seed.portfolio.id)).toBe(false);
+  });
+
+  it("learning resource endpoints", async () => {
+    expect((await app.request("http://local/api/learning-resources")).status).toBe(200);
+    expect((await app.request(`http://local/api/learning-resources/${seed.learningResource.id}`)).status).toBe(200);
+    const anggotaCookie = await getCookie(app, "anggota");
+    const resourcePayload = {
+      title: "LKPD Persamaan Kuadrat",
+      category: "LKPD Interaktif",
+      description: "LKPD interaktif untuk eksplorasi persamaan kuadrat di kelas sepuluh.",
+      phase: "Fase E",
+      grade: "Kelas X",
+      topic: "Persamaan Kuadrat",
+      semester: "Genap",
+      curriculum: "Kurikulum Merdeka",
+      sourceType: "link",
+      resourceUrl: "https://example.test/lkpd-kuadrat",
+      fileName: "",
+      thumbnailUrl: ""
+    };
+    const createRes = await app.request("http://local/api/learning-resources", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: anggotaCookie },
+      body: JSON.stringify(resourcePayload)
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: number; publishStatus: string };
+    expect(created.publishStatus).toBe("pending");
+    expect((await app.request(`http://local/api/learning-resources/${created.id}`)).status).toBe(404);
+    expect((await app.request(`http://local/api/learning-resources/${created.id}`, { headers: { cookie: anggotaCookie } })).status).toBe(200);
+
+    const pengurusCookie = await getCookie(app, "pengurus");
+    expect((await app.request(`http://local/api/learning-resources/${created.id}`, { headers: { cookie: pengurusCookie } })).status).toBe(200);
+    expect(
+      (
+        await app.request(`http://local/api/learning-resources/${created.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", cookie: pengurusCookie },
+          body: JSON.stringify(resourcePayload)
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await app.request(`http://local/api/admin/learning-resources/${created.id}/review`, {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: pengurusCookie },
+          body: JSON.stringify({ status: "approved" })
+        })
+      ).status
+    ).toBe(200);
+    const adminCookie = await getCookie(app, "admin");
+    expect((await app.request(`http://local/api/admin/learning-resources/${created.id}`, { method: "DELETE", headers: { cookie: pengurusCookie } })).status).toBe(403);
+    expect((await app.request(`http://local/api/admin/learning-resources/${created.id}`, { method: "DELETE", headers: { cookie: adminCookie } })).status).toBe(200);
+    expect((await app.request(`http://local/api/learning-resources/${created.id}`)).status).toBe(404);
   });
 
   it("comment + reaction endpoints", async () => {

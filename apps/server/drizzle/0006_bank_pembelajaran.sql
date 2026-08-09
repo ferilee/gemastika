@@ -1,0 +1,20 @@
+CREATE TABLE `learning_resources` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`title` text NOT NULL,
+	`category` text DEFAULT 'RPP / Modul Ajar' NOT NULL,
+	`description` text DEFAULT '' NOT NULL,
+	`phase` text DEFAULT '' NOT NULL,
+	`grade` text DEFAULT '' NOT NULL,
+	`topic` text DEFAULT '' NOT NULL,
+	`semester` text DEFAULT '' NOT NULL,
+	`curriculum` text DEFAULT 'Kurikulum Merdeka' NOT NULL,
+	`source_type` text DEFAULT 'file' NOT NULL,
+	`resource_url` text DEFAULT '' NOT NULL,
+	`file_name` text DEFAULT '' NOT NULL,
+	`thumbnail_url` text DEFAULT '' NOT NULL,
+	`created_by_email` text DEFAULT '' NOT NULL,
+	`publish_status` text DEFAULT 'approved' NOT NULL,
+	`reviewed_by` text DEFAULT '' NOT NULL,
+	`reviewed_at` text DEFAULT '' NOT NULL,
+	`created_at` text DEFAULT (datetime('now')) NOT NULL
+);

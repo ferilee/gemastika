@@ -91,6 +91,29 @@ export const portfolios = sqliteTable("portfolios", {
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
 });
 
+export const learningResources = sqliteTable("learning_resources", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(),
+  category: text("category", { enum: ["RPP / Modul Ajar", "Materi Pembelajaran", "Asesmen Interaktif", "LKPD Interaktif"] })
+    .notNull()
+    .default("RPP / Modul Ajar"),
+  description: text("description").notNull().default(""),
+  phase: text("phase").notNull().default(""),
+  grade: text("grade").notNull().default(""),
+  topic: text("topic").notNull().default(""),
+  semester: text("semester").notNull().default(""),
+  curriculum: text("curriculum").notNull().default("Kurikulum Merdeka"),
+  sourceType: text("source_type", { enum: ["file", "link"] }).notNull().default("file"),
+  resourceUrl: text("resource_url").notNull().default(""),
+  fileName: text("file_name").notNull().default(""),
+  thumbnailUrl: text("thumbnail_url").notNull().default(""),
+  createdByEmail: text("created_by_email").notNull().default(""),
+  publishStatus: text("publish_status", { enum: ["pending", "approved", "rejected"] }).notNull().default("approved"),
+  reviewedBy: text("reviewed_by").notNull().default(""),
+  reviewedAt: text("reviewed_at").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+});
+
 export const homeQuickLinks = sqliteTable("home_quick_links", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   title: text("title").notNull(),

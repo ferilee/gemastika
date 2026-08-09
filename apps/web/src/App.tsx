@@ -8,6 +8,7 @@ import { AnggotaPage } from "@/pages/AnggotaPage";
 import { KegiatanPage } from "@/pages/KegiatanPage";
 import { BeritaPage } from "@/pages/BeritaPage";
 import { PortofolioPage } from "@/pages/PortofolioPage";
+import { BankPembelajaranPage } from "@/pages/BankPembelajaranPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DashboardAdminPage } from "@/pages/DashboardAdminPage";
 import { DashboardPengurusPage } from "@/pages/DashboardPengurusPage";
@@ -28,6 +29,7 @@ export default function App() {
               <Route path="/berita" element={<BeritaPage />} />
               <Route path="/berita/:permalink" element={<BeritaPage />} />
               <Route path="/portofolio" element={<PortofolioPage />} />
+              <Route path="/bank-pembelajaran" element={<BankPembelajaranPage />} />
 
               <Route
                 path="/dashboard"

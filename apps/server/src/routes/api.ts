@@ -4,7 +4,20 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { and, asc, desc, eq, like, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { agendas, attendances, boardMembers, comments, homeQuickLinks, homeSettings, members, news, portfolioRatings, portfolios, reactions } from "../db/schema";
+import {
+  agendas,
+  attendances,
+  boardMembers,
+  comments,
+  homeQuickLinks,
+  homeSettings,
+  learningResources,
+  members,
+  news,
+  portfolioRatings,
+  portfolios,
+  reactions
+} from "../db/schema";
 import { getSession } from "../auth/session";
 import { getEnv } from "../env";
 
@@ -17,6 +30,22 @@ const SCHOOL_CACHE_TTL_MS = 1000 * 60 * 30;
 const ATTENDANCE_XP_DEFAULT = 10;
 const PUBLISH_VALUES = ["pending", "approved", "rejected"] as const;
 type PublishStatus = (typeof PUBLISH_VALUES)[number];
+const LEARNING_RESOURCE_CATEGORIES = ["RPP / Modul Ajar", "Materi Pembelajaran", "Asesmen Interaktif", "LKPD Interaktif"] as const;
+const RESOURCE_SOURCE_TYPES = ["file", "link"] as const;
+const learningResourcePayload = z.object({
+  title: z.string().trim().min(3).max(180),
+  category: z.enum(LEARNING_RESOURCE_CATEGORIES),
+  description: z.string().trim().min(10).max(5000),
+  phase: z.string().trim().min(1).max(30),
+  grade: z.string().trim().min(1).max(60),
+  topic: z.string().trim().min(2).max(120),
+  semester: z.string().trim().min(1).max(30),
+  curriculum: z.string().trim().min(2).max(80),
+  sourceType: z.enum(RESOURCE_SOURCE_TYPES),
+  resourceUrl: z.string().url(),
+  fileName: z.string().trim().max(255).default(""),
+  thumbnailUrl: z.string().url().or(z.literal("")).default("")
+});
 const schoolCache = new Map<string, { expiresAt: number; items: SchoolItem[] }>();
 const SCHOOL_FALLBACK: SchoolItem[] = [
   { name: "SMK Negeri 1 Lumajang", city: "Kab. Lumajang", province: "Jawa Timur" },
@@ -162,6 +191,23 @@ function guessExt(contentType: string) {
   return "bin";
 }
 
+function resourceFileExt(file: File) {
+  const fromName = file.name.trim().toLowerCase().match(/\.([a-z0-9]{1,8})$/)?.[1] || "";
+  if (["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx"].includes(fromName)) return fromName;
+  const contentType = file.type.toLowerCase();
+  if (contentType.includes("pdf")) return "pdf";
+  if (contentType.includes("wordprocessingml")) return "docx";
+  if (contentType.includes("msword")) return "doc";
+  if (contentType.includes("presentationml")) return "pptx";
+  if (contentType.includes("powerpoint")) return "ppt";
+  if (contentType.includes("spreadsheetml")) return "xlsx";
+  if (contentType.includes("excel")) return "xls";
+  return "";
+}
+
+const RUSTFS_CHECK_TIMEOUT_MS = 30000;
+const RUSTFS_UPLOAD_TIMEOUT_MS = 60000;
+
 export function apiRouter(db: Db) {
   const api = new Hono().basePath("/api");
 
@@ -206,9 +252,12 @@ export function apiRouter(db: Db) {
     try {
       await Promise.race([
         s3.file(key).write("gemastika-rustfs-check"),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("write timeout")), 10000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error("write timeout")), RUSTFS_CHECK_TIMEOUT_MS))
       ]);
-      await Promise.race([s3.file(key).delete(), new Promise((_, reject) => setTimeout(() => reject(new Error("delete timeout")), 10000))]);
+      await Promise.race([
+        s3.file(key).delete(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("delete timeout")), RUSTFS_CHECK_TIMEOUT_MS))
+      ]);
       writeDeleteOk = true;
     } catch (err) {
       writeDeleteError = err instanceof Error ? err.message : String(err);
@@ -268,9 +317,10 @@ export function apiRouter(db: Db) {
     });
 
     try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
       await Promise.race([
-        s3.file(key).write(file),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timeout ke RustFS.")), 15000))
+        s3.file(key).write(bytes, { type: file.type }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timeout ke RustFS.")), RUSTFS_UPLOAD_TIMEOUT_MS))
       ]);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Gagal upload ke RustFS.";
@@ -281,6 +331,52 @@ export function apiRouter(db: Db) {
     const publicBase = cleanBaseUrl(env.s3PublicBaseUrl || (env.s3Endpoint.startsWith("https://") ? env.s3Endpoint : "https://s3.gemastika.or.id"));
     const url = `${publicBase}/${env.s3Bucket}/${key}`;
     return c.json({ key, url }, 201);
+  });
+
+  api.post("/uploads/resource", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    if (!session) return c.json({ error: "Silakan masuk terlebih dahulu." }, 401);
+    const email = (session.email || "").trim().toLowerCase();
+    const me = email ? await db.select().from(members).where(eq(members.email, email)).get() : null;
+    if (!me || parseMembershipStatus(me.membershipStatus) !== "approved") return c.json({ error: "Akses khusus anggota aktif." }, 403);
+    if (!env.s3Endpoint || !env.s3AccessKey || !env.s3SecretKey || !env.s3Bucket) {
+      return c.json({ error: "Konfigurasi RustFS belum lengkap di server." }, 500);
+    }
+
+    const body = await c.req.parseBody();
+    const fileLike = body.file;
+    const file = Array.isArray(fileLike) ? fileLike[0] : fileLike;
+    if (!(file instanceof File)) return c.json({ error: "File materi tidak ditemukan." }, 400);
+    const ext = resourceFileExt(file);
+    if (!ext) return c.json({ error: "Format file harus PDF, DOCX, PPTX, XLSX, DOC, PPT, atau XLS." }, 400);
+    if (file.size > 20 * 1024 * 1024) return c.json({ error: "Ukuran file maksimal 20MB." }, 400);
+
+    const now = new Date();
+    const key = `bank-pembelajaran/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${crypto.randomUUID()}.${ext}`;
+    const s3 = new S3Client({
+      endpoint: env.s3Endpoint,
+      accessKeyId: env.s3AccessKey,
+      secretAccessKey: env.s3SecretKey,
+      bucket: env.s3Bucket,
+      region: env.s3Region,
+      virtualHostedStyle: !env.s3ForcePathStyle
+    });
+
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await Promise.race([
+        s3.file(key).write(bytes, { type: file.type || "application/octet-stream" }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timeout ke RustFS.")), RUSTFS_UPLOAD_TIMEOUT_MS))
+      ]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Gagal upload materi ke RustFS.";
+      console.error("upload_resource_error:", message);
+      return c.json({ error: message }, 502);
+    }
+
+    const publicBase = cleanBaseUrl(env.s3PublicBaseUrl || (env.s3Endpoint.startsWith("https://") ? env.s3Endpoint : "https://s3.gemastika.or.id"));
+    return c.json({ key, url: `${publicBase}/${env.s3Bucket}/${key}`, fileName: file.name }, 201);
   });
 
   api.get("/comments", async (c) => {
@@ -1272,6 +1368,123 @@ export function apiRouter(db: Db) {
       await tx.delete(portfolios).where(eq(portfolios.id, id));
     });
 
+    return c.json({ ok: true, id });
+  });
+
+  api.get("/learning-resources", async (c) => {
+    const q = (c.req.query("q") || "").trim().toLowerCase();
+    const category = (c.req.query("category") || "").trim();
+    const phase = (c.req.query("phase") || "").trim();
+    const includeAll = c.req.query("includeAll") === "1";
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    const canReview = sessionRoles.includes("admin") || sessionRoles.includes("pengurus");
+    const viewerEmail = (session?.email || "").trim().toLowerCase();
+    const visibilityWhere =
+      includeAll && canReview
+        ? undefined
+        : viewerEmail
+          ? or(eq(learningResources.publishStatus, "approved"), and(eq(learningResources.publishStatus, "pending"), eq(learningResources.createdByEmail, viewerEmail)))
+          : eq(learningResources.publishStatus, "approved");
+    const rows = await db
+      .select()
+      .from(learningResources)
+      .where(
+        and(
+          q
+            ? or(
+                like(learningResources.title, `%${q}%`),
+                like(learningResources.topic, `%${q}%`),
+                like(learningResources.description, `%${q}%`)
+              )
+            : undefined,
+          category && category !== "All" ? eq(learningResources.category, category) : undefined,
+          phase && phase !== "All" ? eq(learningResources.phase, phase) : undefined,
+          visibilityWhere
+        )
+      )
+      .orderBy(desc(learningResources.createdAt), desc(learningResources.id));
+    return c.json(rows);
+  });
+
+  api.get("/learning-resources/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    const row = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
+    if (!row) return c.json({ error: "Not found" }, 404);
+
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    const canReview = sessionRoles.includes("admin") || sessionRoles.includes("pengurus");
+    const viewerEmail = (session?.email || "").trim().toLowerCase();
+    const isOwner = Boolean(viewerEmail && (row.createdByEmail || "").trim().toLowerCase() === viewerEmail);
+    if (parsePublishStatus(row.publishStatus) !== "approved" && !canReview && !isOwner) return c.json({ error: "Not found" }, 404);
+    return c.json(row);
+  });
+
+  api.post("/learning-resources", zValidator("json", learningResourcePayload), async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    if (!session) return c.json({ error: "Unauthorized" }, 401);
+    const email = (session.email || "").trim().toLowerCase();
+    const me = email ? await db.select().from(members).where(eq(members.email, email)).get() : null;
+    if (!me || parseMembershipStatus(me.membershipStatus) !== "approved") return c.json({ error: "Akses khusus anggota aktif." }, 403);
+
+    const [inserted] = await db
+      .insert(learningResources)
+      .values({ ...c.req.valid("json"), createdByEmail: email, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
+      .returning();
+    return c.json(inserted, 201);
+  });
+
+  api.patch("/learning-resources/:id", zValidator("json", learningResourcePayload), async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    if (!session) return c.json({ error: "Unauthorized" }, 401);
+    const email = (session.email || "").trim().toLowerCase();
+    const id = Number(c.req.param("id"));
+    const existing = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
+    if (!existing) return c.json({ error: "Not found" }, 404);
+    if (!email || (existing.createdByEmail || "").trim().toLowerCase() !== email) return c.json({ error: "Hanya kontributor yang bisa mengedit materi." }, 403);
+
+    const me = await db.select().from(members).where(eq(members.email, email)).get();
+    if (!me || parseMembershipStatus(me.membershipStatus) !== "approved") return c.json({ error: "Akses khusus anggota aktif." }, 403);
+    await db
+      .update(learningResources)
+      .set({ ...c.req.valid("json"), publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
+      .where(eq(learningResources.id, id));
+    return c.json(await db.select().from(learningResources).where(eq(learningResources.id, id)).get());
+  });
+
+  api.post(
+    "/admin/learning-resources/:id/review",
+    zValidator("json", z.object({ status: z.enum(PUBLISH_VALUES) })),
+    async (c) => {
+      const env = getEnv();
+      const session = await getSession(c, env.sessionSecret);
+      const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+      if (!session || (!sessionRoles.includes("admin") && !sessionRoles.includes("pengurus"))) return c.json({ error: "Forbidden" }, 403);
+      const id = Number(c.req.param("id"));
+      await db
+        .update(learningResources)
+        .set({ publishStatus: c.req.valid("json").status, reviewedBy: (session.email || session.name || "").trim(), reviewedAt: new Date().toISOString() })
+        .where(eq(learningResources.id, id));
+      const updated = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
+      if (!updated) return c.json({ error: "Not found" }, 404);
+      return c.json(updated);
+    }
+  );
+
+  api.delete("/admin/learning-resources/:id", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !sessionRoles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
+    const id = Number(c.req.param("id"));
+    const existing = await db.select({ id: learningResources.id }).from(learningResources).where(eq(learningResources.id, id)).get();
+    if (!existing) return c.json({ error: "Not found" }, 404);
+    await db.delete(learningResources).where(eq(learningResources.id, id));
     return c.json({ ok: true, id });
   });
 
