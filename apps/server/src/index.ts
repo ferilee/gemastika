@@ -9,6 +9,7 @@ import { seedIfEmpty } from "./db/seed";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { googleAuthRouter } from "./auth/google";
 import { ensureRuntimeSchema } from "./db/ensure";
+import { auditLearningResourceLinks } from "./services/linkAudit";
 
 const env = getEnv();
 const db = createDb(env.dbPath);
@@ -31,6 +32,20 @@ try {
 }
 await ensureRuntimeSchema(db);
 await seedIfEmpty(db);
+
+if (env.linkAuditIntervalMinutes > 0) {
+  const intervalMs = env.linkAuditIntervalMinutes * 60 * 1000;
+  const runLinkAudit = async () => {
+    try {
+      const result = await auditLearningResourceLinks(db);
+      console.log(`[link-audit] checked=${result.checked} ok=${result.ok} broken=${result.broken}`);
+    } catch (error) {
+      console.error("[link-audit] failed:", error);
+    }
+  };
+  setTimeout(() => void runLinkAudit(), Math.min(15_000, intervalMs));
+  setInterval(() => void runLinkAudit(), intervalMs);
+}
 
 const app = new Hono();
 app.use(

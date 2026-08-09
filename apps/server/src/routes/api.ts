@@ -27,6 +27,7 @@ import {
 } from "../db/schema";
 import { getSession } from "../auth/session";
 import { getEnv } from "../env";
+import { checkLearningResourceLink } from "../services/linkAudit";
 
 const ROLE_VALUES = ["admin", "pengurus", "anggota"] as const;
 type RoleValue = (typeof ROLE_VALUES)[number];
@@ -1428,6 +1429,48 @@ export function apiRouter(db: Db) {
     return c.json(rows);
   });
 
+  api.get("/admin/learning-resources/operations", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !roles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
+
+    const [resources, openReports] = await Promise.all([
+      db.select().from(learningResources).orderBy(desc(learningResources.createdAt)),
+      db.select().from(learningResourceReports).where(eq(learningResourceReports.status, "open")).orderBy(desc(learningResourceReports.createdAt))
+    ]);
+    const countStatus = (status: PublishStatus) => resources.filter((item) => item.publishStatus === status && !item.archivedAt).length;
+    const byCategory = Array.from(
+      resources.reduce((map, item) => map.set(item.category, (map.get(item.category) || 0) + 1), new Map<string, number>())
+    ).map(([category, count]) => ({ category, count })).sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
+    const topResources = [...resources]
+      .filter((item) => !item.archivedAt && item.publishStatus === "approved")
+      .sort((a, b) => (b.viewCount + b.downloadCount) - (a.viewCount + a.downloadCount) || b.id - a.id)
+      .slice(0, 5)
+      .map((item) => ({ id: item.id, title: item.title, category: item.category, viewCount: item.viewCount, downloadCount: item.downloadCount }));
+    const now = Date.now();
+    const staleLinks = resources.filter((item) => item.sourceType === "link" && !item.archivedAt && now - new Date(item.createdAt).getTime() > 1000 * 60 * 60 * 24 * 90).length;
+    return c.json({
+      overview: {
+        total: resources.length,
+        approved: countStatus("approved"),
+        pending: countStatus("pending"),
+        rejected: countStatus("rejected"),
+        archived: resources.filter((item) => Boolean(item.archivedAt)).length,
+        files: resources.filter((item) => item.sourceType === "file").length,
+        links: resources.filter((item) => item.sourceType === "link").length,
+        views: resources.reduce((total, item) => total + item.viewCount, 0),
+        downloads: resources.reduce((total, item) => total + item.downloadCount, 0),
+        openReports: openReports.length,
+        staleLinks,
+        brokenLinks: resources.filter((item) => item.linkCheckStatus === "broken" && !item.archivedAt).length
+      },
+      byCategory,
+      topResources,
+      openReports: openReports.slice(0, 8)
+    });
+  });
+
   api.get("/learning-resources/:id", async (c) => {
     const id = Number(c.req.param("id"));
     const row = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
@@ -1700,18 +1743,10 @@ export function apiRouter(db: Db) {
     if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
     const resource = await db.select().from(learningResources).where(eq(learningResources.id, Number(c.req.param("id")))).get();
     if (!resource) return c.json({ error: "Not found" }, 404);
-    let url: URL;
-    try { url = new URL(resource.resourceUrl); } catch { return c.json({ ok: false, error: "URL materi tidak valid." }, 400); }
-    if (url.protocol !== "https:" && url.protocol !== "http:") return c.json({ ok: false, error: "Hanya tautan HTTP(S) yang dapat diperiksa." }, 400);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    try {
-      let response = await fetch(url, { method: "HEAD", redirect: "follow", signal: controller.signal });
-      if (response.status === 405) response = await fetch(url, { method: "GET", redirect: "follow", signal: controller.signal });
-      return c.json({ ok: response.ok, status: response.status, checkedAt: new Date().toISOString() });
-    } catch {
-      return c.json({ ok: false, error: "Tautan tidak dapat dijangkau.", checkedAt: new Date().toISOString() });
-    } finally { clearTimeout(timeout); }
+    const result = await checkLearningResourceLink(resource.resourceUrl);
+    const checkedAt = new Date().toISOString();
+    await db.update(learningResources).set({ linkCheckedAt: checkedAt, linkCheckStatus: result.status, linkCheckError: result.error || "" }).where(eq(learningResources.id, resource.id));
+    return c.json({ ok: result.status === "ok", status: result.httpStatus, error: result.error, checkedAt });
   });
 
   api.get("/notifications", async (c) => {

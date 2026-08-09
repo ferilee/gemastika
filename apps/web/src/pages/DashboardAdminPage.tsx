@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ArrowLeft, Check, LayoutGrid, Quote, Search, Shield, Trash2, User, Users, X } from "lucide-react";
+import { Archive, ArrowLeft, BarChart3, Check, Download, FileText, LayoutGrid, Link2, Quote, Search, Shield, Trash2, User, Users, X } from "lucide-react";
 import { api } from "@/api/client";
 import type { BoardMember, HomeContent, Member, MemberRole, MembershipStatus } from "@/types";
 import { useAppData } from "@/state/AppDataContext";
@@ -32,12 +32,19 @@ function statusVariant(status: MembershipStatus) {
   return "accent";
 }
 
-type AdminSection = "home" | "role-manager" | "susunan-pengurus" | "konten-beranda";
+type AdminSection = "home" | "role-manager" | "susunan-pengurus" | "konten-beranda" | "bank-operasional";
+type BankOperations = {
+  overview: { total: number; approved: number; pending: number; rejected: number; archived: number; files: number; links: number; views: number; downloads: number; openReports: number; staleLinks: number; brokenLinks: number };
+  byCategory: Array<{ category: string; count: number }>;
+  topResources: Array<{ id: number; title: string; category: string; viewCount: number; downloadCount: number }>;
+  openReports: Array<{ id: number; resourceId: number; reason: string; detail: string; createdAt: string }>;
+};
 
 function detectSection(pathname: string): AdminSection {
   if (pathname.endsWith("/role-manager")) return "role-manager";
   if (pathname.endsWith("/susunan-pengurus")) return "susunan-pengurus";
   if (pathname.endsWith("/konten-beranda")) return "konten-beranda";
+  if (pathname.endsWith("/bank-operasional")) return "bank-operasional";
   return "home";
 }
 
@@ -55,6 +62,8 @@ export function DashboardAdminPage() {
   const [quoteText, setQuoteText] = useState("");
   const [quoteAuthor, setQuoteAuthor] = useState("");
   const [savingHomeContent, setSavingHomeContent] = useState(false);
+  const [bankOperations, setBankOperations] = useState<BankOperations | null>(null);
+  const [loadingBankOperations, setLoadingBankOperations] = useState(false);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -140,6 +149,17 @@ export function DashboardAdminPage() {
     setQuoteText(homeContent.quote.text || "");
     setQuoteAuthor(homeContent.quote.author || "");
   }, [homeContent]);
+
+  useEffect(() => {
+    if (section !== "bank-operasional") return;
+    let cancelled = false;
+    setLoadingBankOperations(true);
+    void api<BankOperations>("/api/admin/learning-resources/operations")
+      .then((data) => { if (!cancelled) setBankOperations(data); })
+      .catch(() => { if (!cancelled) setBankOperations(null); })
+      .finally(() => { if (!cancelled) setLoadingBankOperations(false); });
+    return () => { cancelled = true; };
+  }, [section]);
 
   function updateBoardRow(index: number, key: "memberId" | "title" | "contact", value: string | number) {
     setBoard((prev) => prev.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
@@ -244,7 +264,7 @@ export function DashboardAdminPage() {
             <Link to="/dashboard/pengurus">Buka Dashboard Pengurus</Link>
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <Card asChild className="rounded-2xl">
             <Link to="/dashboard/admin/role-manager">
               <CardHeader className="flex-row items-center justify-between">
@@ -252,6 +272,15 @@ export function DashboardAdminPage() {
                 <Users className="h-5 w-5 text-rose-500" />
               </CardHeader>
               <CardContent className="text-sm text-slate-500 dark:text-slate-400">Kelola role, status, dan akun anggota.</CardContent>
+            </Link>
+          </Card>
+          <Card asChild className="rounded-2xl">
+            <Link to="/dashboard/admin/bank-operasional">
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle className="text-mgmp-blue dark:text-white">Operasional Bank</CardTitle>
+                <BarChart3 className="h-5 w-5 text-emerald-500" />
+              </CardHeader>
+              <CardContent className="text-sm text-slate-500 dark:text-slate-400">Pantau penggunaan, kualitas tautan, dan laporan materi.</CardContent>
             </Link>
           </Card>
           <Card asChild className="rounded-2xl">
@@ -286,7 +315,7 @@ export function DashboardAdminPage() {
           </Link>
         </Button>
         <h1 className="text-2xl font-extrabold text-mgmp-blue dark:text-white">
-          {section === "role-manager" ? "Role Manager" : section === "susunan-pengurus" ? "Susunan Pengurus" : "Konten Beranda"}
+          {section === "role-manager" ? "Role Manager" : section === "susunan-pengurus" ? "Susunan Pengurus" : section === "konten-beranda" ? "Konten Beranda" : "Operasional Bank Pembelajaran"}
         </h1>
       </div>
 
@@ -477,6 +506,19 @@ export function DashboardAdminPage() {
             </Button>
           </CardContent>
         </Card>
+      ) : null}
+
+      {section === "bank-operasional" ? (
+        loadingBankOperations ? <div className="grid grid-cols-2 gap-4 md:grid-cols-4">{Array.from({ length: 8 }).map((_, index) => <div key={index} className="h-28 animate-pulse rounded-xl bg-slate-100 dark:bg-white/5" />)}</div> : !bankOperations ? <Card><CardContent className="py-10 text-center text-sm text-slate-500">Data operasional Bank Pembelajaran belum dapat dimuat.</CardContent></Card> : <div className="space-y-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {[["Total Materi", bankOperations.overview.total, FileText], ["Dipublikasikan", bankOperations.overview.approved, Check], ["Menunggu Review", bankOperations.overview.pending, Shield], ["Laporan Terbuka", bankOperations.overview.openReports, BarChart3], ["Total Dilihat", bankOperations.overview.views, BarChart3], ["Total Dibuka", bankOperations.overview.downloads, Download], ["Tautan Bermasalah", bankOperations.overview.brokenLinks, Link2], ["Diarsipkan", bankOperations.overview.archived, Archive]].map(([label, value, Icon]) => { const MetricIcon = Icon as typeof BarChart3; return <Card key={label as string} className="rounded-xl"><CardContent className="flex items-center justify-between p-4"><div><div className="text-xs font-semibold text-slate-500 dark:text-slate-400">{label as string}</div><div className="mt-1 text-2xl font-extrabold text-mgmp-blue dark:text-white">{value as number}</div></div><MetricIcon className="h-5 w-5 text-mgmp-primary" /></CardContent></Card>; })}
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card><CardHeader><CardTitle className="text-mgmp-blue dark:text-white">Distribusi Kategori</CardTitle></CardHeader><CardContent className="space-y-3">{bankOperations.byCategory.length ? bankOperations.byCategory.map((item) => <div key={item.category} className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600 dark:text-slate-300">{item.category}</span><Badge variant="primary">{item.count}</Badge></div>) : <div className="text-sm text-slate-500">Belum ada materi.</div>}</CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-mgmp-blue dark:text-white">Materi Terpopuler</CardTitle></CardHeader><CardContent className="space-y-3">{bankOperations.topResources.length ? bankOperations.topResources.map((item) => <Link key={item.id} to={`/bank-pembelajaran/${item.id}`} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1 hover:bg-slate-100 dark:hover:bg-white/5"><div className="min-w-0"><div className="truncate text-sm font-bold text-slate-800 dark:text-white">{item.title}</div><div className="text-xs text-slate-500">{item.category}</div></div><div className="shrink-0 text-xs font-semibold text-slate-500">{item.viewCount} lihat · {item.downloadCount} buka</div></Link>) : <div className="text-sm text-slate-500">Belum ada materi dipublikasikan.</div>}</CardContent></Card>
+          </div>
+          <Card><CardHeader><CardTitle className="text-mgmp-blue dark:text-white">Laporan Terbuka</CardTitle></CardHeader><CardContent className="space-y-3">{bankOperations.openReports.length ? bankOperations.openReports.map((report) => <div key={report.id} className="rounded-lg border border-slate-200/70 p-3 dark:border-white/10"><div className="text-sm font-bold text-slate-800 dark:text-white">Materi #{report.resourceId}: {report.reason}</div>{report.detail ? <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{report.detail}</div> : null}</div>) : <div className="text-sm text-slate-500">Tidak ada laporan terbuka.</div>}<Button asChild variant="secondary" size="sm"><Link to="/dashboard/pengurus">Tindak lanjuti di dashboard pengurus</Link></Button></CardContent></Card>
+        </div>
       ) : null}
     </div>
   );

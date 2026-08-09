@@ -119,6 +119,9 @@ export const learningResources = sqliteTable("learning_resources", {
   reviewNote: text("review_note").notNull().default(""),
   archivedAt: text("archived_at").notNull().default(""),
   archiveReason: text("archive_reason").notNull().default(""),
+  linkCheckedAt: text("link_checked_at").notNull().default(""),
+  linkCheckStatus: text("link_check_status", { enum: ["unknown", "ok", "broken"] }).notNull().default("unknown"),
+  linkCheckError: text("link_check_error").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
 });
 

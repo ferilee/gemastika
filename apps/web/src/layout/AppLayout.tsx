@@ -1,4 +1,4 @@
-import { Outlet, NavLink, Link } from "react-router-dom";
+import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { BookOpen, CalendarDays, Laptop2, Newspaper, Users, User, Shield, AlertCircle, Bell } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -10,7 +10,7 @@ import { GlobalAlertDialog } from "@/components/GlobalAlertDialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { api } from "@/api/client";
-import type { LearningResource, Member } from "@/types";
+import type { LearningResource, Member, UserNotification } from "@/types";
 
 function NavItem({
   to,
@@ -78,11 +78,14 @@ function BottomItem({
 }
 
 export function AppLayout() {
+  const navigate = useNavigate();
   const { user, profileRegistered, memberStatus } = useAuth();
   const showAdminBottomItem = hasRole(user, "admin");
   const showDashboardNav = hasRole(user, "admin") || hasRole(user, "pengurus");
-  const showNotifBell = hasRole(user, "admin") || hasRole(user, "pengurus");
+  const showNotifBell = Boolean(user);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [openNotifications, setOpenNotifications] = useState(false);
   const dashboardLink = hasRole(user, "admin")
     ? "/dashboard/admin"
     : hasRole(user, "pengurus")
@@ -144,6 +147,31 @@ export function AppLayout() {
     };
   }, [showNotifBell, user]);
 
+  useEffect(() => {
+    if (!user) { setNotifications([]); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const rows = await api<UserNotification[]>("/api/notifications");
+        if (!cancelled) setNotifications(rows);
+      } catch {
+        if (!cancelled) setNotifications([]);
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [user]);
+
+  async function openNotification(notification: UserNotification) {
+    if (!notification.readAt) {
+      setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, readAt: new Date().toISOString() } : item));
+      try { await api(`/api/notifications/${notification.id}/read`, { method: "POST" }); } catch { /* optimistic state is sufficient */ }
+    }
+    setOpenNotifications(false);
+    navigate(notification.href || "/bank-pembelajaran");
+  }
+
   async function closeBadgeModal() {
     setOpenBadgeModal(false);
     try {
@@ -152,6 +180,9 @@ export function AppLayout() {
       // ignore
     }
   }
+
+  const unreadNotificationCount = notifications.filter((item) => !item.readAt).length;
+  const notificationCount = pendingApprovalCount + unreadNotificationCount;
 
   return (
     <div className="min-h-screen pb-20 md:pb-0 bg-mgmp-surface text-slate-800 dark:bg-[#0b1220] dark:text-slate-200">
@@ -190,19 +221,20 @@ export function AppLayout() {
               </div>
             ) : null}
             {user && showNotifBell ? (
-              <Link
-                to="/dashboard/pengurus"
+              <button
+                type="button"
+                onClick={() => setOpenNotifications(true)}
                 className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/70 bg-white/70 text-slate-600 hover:text-mgmp-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
-                title="Notifikasi review"
-                aria-label="Notifikasi review"
+                title="Notifikasi"
+                aria-label="Notifikasi"
               >
                 <Bell className="h-4 w-4" />
-                {pendingApprovalCount > 0 ? (
+                {notificationCount > 0 ? (
                   <span className="absolute -right-1 -top-1 inline-flex min-w-[16px] h-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-extrabold text-white">
-                    {pendingApprovalCount > 99 ? "99+" : pendingApprovalCount}
+                    {notificationCount > 99 ? "99+" : notificationCount}
                   </span>
                 ) : null}
-              </Link>
+              </button>
             ) : null}
             <InstallAppButton />
             <ThemeToggle />
@@ -215,19 +247,20 @@ export function AppLayout() {
               </div>
             ) : null}
             {user && showNotifBell ? (
-              <Link
-                to="/dashboard/pengurus"
+              <button
+                type="button"
+                onClick={() => setOpenNotifications(true)}
                 className="relative inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/70 bg-white/70 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
-                title="Notifikasi review"
-                aria-label="Notifikasi review"
+                title="Notifikasi"
+                aria-label="Notifikasi"
               >
                 <Bell className="h-4 w-4" />
-                {pendingApprovalCount > 0 ? (
+                {notificationCount > 0 ? (
                   <span className="absolute -right-1 -top-1 inline-flex min-w-[16px] h-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-extrabold text-white">
-                    {pendingApprovalCount > 99 ? "99+" : pendingApprovalCount}
+                    {notificationCount > 99 ? "99+" : notificationCount}
                   </span>
                 ) : null}
-              </Link>
+              </button>
             ) : null}
             <InstallAppButton />
             <ThemeToggle />
@@ -258,6 +291,15 @@ export function AppLayout() {
 
       <ProfileOnboardingModal />
       <GlobalAlertDialog />
+
+      <Dialog open={openNotifications} onOpenChange={setOpenNotifications}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Notifikasi</DialogTitle><DialogDescription>Pembaruan untuk materi dan aktivitas Anda.</DialogDescription></DialogHeader>
+          <div className="max-h-80 space-y-2 overflow-y-auto px-6 pb-6">
+            {notifications.length ? notifications.map((notification) => <button type="button" key={notification.id} onClick={() => void openNotification(notification)} className={["w-full rounded-lg border p-3 text-left transition", notification.readAt ? "border-slate-200/70 bg-white/50 dark:border-white/10 dark:bg-white/5" : "border-mgmp-primary/30 bg-mgmp-primary/5 dark:bg-mgmp-primary/10"].join(" ")}><div className="text-sm font-extrabold text-slate-800 dark:text-white">{notification.title}</div>{notification.message ? <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{notification.message}</div> : null}</button>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada notifikasi baru.</div>}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={openBadgeModal} onOpenChange={setOpenBadgeModal}>
         <DialogContent className="max-w-md">

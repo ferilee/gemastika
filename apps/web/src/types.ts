@@ -86,6 +86,9 @@ export type LearningResource = {
   reviewNote: string;
   archivedAt: string;
   archiveReason: string;
+  linkCheckedAt: string;
+  linkCheckStatus: "unknown" | "ok" | "broken";
+  linkCheckError: string;
   createdAt: string;
 };
 

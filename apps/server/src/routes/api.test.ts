@@ -384,6 +384,11 @@ describe("api endpoints", () => {
   it("learning resource endpoints", async () => {
     expect((await app.request("http://local/api/learning-resources")).status).toBe(200);
     expect((await app.request(`http://local/api/learning-resources/${seed.learningResource.id}`)).status).toBe(200);
+    expect((await app.request("http://local/api/admin/learning-resources/operations")).status).toBe(403);
+    const initialAdminCookie = await getCookie(app, "admin");
+    const operationsRes = await app.request("http://local/api/admin/learning-resources/operations", { headers: { cookie: initialAdminCookie } });
+    expect(operationsRes.status).toBe(200);
+    expect(((await operationsRes.json()) as { overview: { total: number } }).overview.total).toBeGreaterThan(0);
     const anggotaCookie = await getCookie(app, "anggota");
     const resourcePayload = {
       title: "LKPD Persamaan Kuadrat",

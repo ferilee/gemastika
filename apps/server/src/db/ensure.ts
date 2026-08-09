@@ -230,6 +230,9 @@ export async function ensureRuntimeSchema(db: Db) {
   if (!resourceColumns.has("review_note")) await db.run(sql`ALTER TABLE learning_resources ADD review_note text DEFAULT '' NOT NULL`);
   if (!resourceColumns.has("archived_at")) await db.run(sql`ALTER TABLE learning_resources ADD archived_at text DEFAULT '' NOT NULL`);
   if (!resourceColumns.has("archive_reason")) await db.run(sql`ALTER TABLE learning_resources ADD archive_reason text DEFAULT '' NOT NULL`);
+  if (!resourceColumns.has("link_checked_at")) await db.run(sql`ALTER TABLE learning_resources ADD link_checked_at text DEFAULT '' NOT NULL`);
+  if (!resourceColumns.has("link_check_status")) await db.run(sql`ALTER TABLE learning_resources ADD link_check_status text DEFAULT 'unknown' NOT NULL`);
+  if (!resourceColumns.has("link_check_error")) await db.run(sql`ALTER TABLE learning_resources ADD link_check_error text DEFAULT '' NOT NULL`);
 
   await db.run(sql`
     CREATE TABLE IF NOT EXISTS learning_resource_versions (

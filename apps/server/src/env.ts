@@ -24,6 +24,7 @@ export function getEnv() {
   const s3Region = process.env.S3_REGION || "us-east-1";
   const s3ForcePathStyle = (process.env.S3_FORCE_PATH_STYLE || "true").toLowerCase() === "true";
   const s3PublicBaseUrl = process.env.S3_PUBLIC_BASE_URL || "";
+  const linkAuditIntervalMinutes = Math.max(0, Number(process.env.LINK_AUDIT_INTERVAL_MINUTES || 360));
 
   return {
     port,
@@ -42,6 +43,7 @@ export function getEnv() {
     s3Bucket,
     s3Region,
     s3ForcePathStyle,
-    s3PublicBaseUrl
+    s3PublicBaseUrl,
+    linkAuditIntervalMinutes
   };
 }
