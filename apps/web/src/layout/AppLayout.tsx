@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { api } from "@/api/client";
 import type { LearningResource, Member, UserNotification } from "@/types";
+import { useAppData } from "@/state/AppDataContext";
 
 function NavItem({
   to,
@@ -80,12 +81,15 @@ function BottomItem({
 export function AppLayout() {
   const navigate = useNavigate();
   const { user, profileRegistered, memberStatus } = useAuth();
+  const { homeContent } = useAppData();
   const showAdminBottomItem = hasRole(user, "admin");
   const showDashboardNav = hasRole(user, "admin") || hasRole(user, "pengurus");
   const showNotifBell = Boolean(user);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [openNotifications, setOpenNotifications] = useState(false);
+  const [openWelcome, setOpenWelcome] = useState(false);
+  const [welcomeActivity, setWelcomeActivity] = useState({ activeDays: 0, totalVisits: 0, activeToday: false });
   const dashboardLink = hasRole(user, "admin")
     ? "/dashboard/admin"
     : hasRole(user, "pengurus")
@@ -124,6 +128,28 @@ export function AppLayout() {
     if (!user) return;
     void api("/api/member-activity/visit", { method: "POST" }).catch(() => undefined);
   }, [user?.email, user?.sub]);
+
+  useEffect(() => {
+    if (!user || memberStatus !== "approved") { setOpenWelcome(false); return; }
+    const memberKey = (user.email || user.sub || "").toLowerCase();
+    const today = new Date().toLocaleDateString("en-CA");
+    const storageKey = `mgmp-welcome:${memberKey}:${today}`;
+    try {
+      if (localStorage.getItem(storageKey)) return;
+    } catch {
+      // Continue without a persistence marker if browser storage is unavailable.
+    }
+    let cancelled = false;
+    void api<{ activeDays: number; totalVisits: number; activeToday: boolean }>("/api/member-activity/me")
+      .then((activity) => {
+        if (cancelled) return;
+        setWelcomeActivity(activity);
+        setOpenWelcome(true);
+        try { localStorage.setItem(storageKey, "1"); } catch { /* no-op */ }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [memberStatus, user?.email, user?.sub]);
 
   useEffect(() => {
     let cancelled = false;
@@ -303,6 +329,16 @@ export function AppLayout() {
           <div className="max-h-80 space-y-2 overflow-y-auto px-6 pb-6">
             {notifications.length ? notifications.map((notification) => <button type="button" key={notification.id} onClick={() => void openNotification(notification)} className={["w-full rounded-lg border p-3 text-left transition", notification.readAt ? "border-slate-200/70 bg-white/50 dark:border-white/10 dark:bg-white/5" : "border-mgmp-primary/30 bg-mgmp-primary/5 dark:bg-mgmp-primary/10"].join(" ")}><div className="text-sm font-extrabold text-slate-800 dark:text-white">{notification.title}</div>{notification.message ? <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{notification.message}</div> : null}</button>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada notifikasi baru.</div>}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openWelcome} onOpenChange={setOpenWelcome}>
+        <DialogContent className="max-w-md overflow-hidden">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            {Array.from({ length: 16 }).map((_, index) => <span key={index} className="welcome-confetti" style={{ left: `${6 + ((index * 17) % 88)}%`, animationDelay: `${(index % 6) * 0.12}s` }} />)}
+          </div>
+          <DialogHeader className="relative"><DialogTitle>Selamat datang, {user?.name || "Anggota"}</DialogTitle><DialogDescription>{new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date())}</DialogDescription></DialogHeader>
+          <div className="relative space-y-4 px-6 pb-6"><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-400/25 dark:bg-emerald-500/10"><div className="text-sm font-extrabold text-emerald-800 dark:text-emerald-200">{welcomeActivity.activeToday ? "Aktif hari ini" : "Mulai aktivitas hari ini"}</div><div className="mt-1 text-sm text-emerald-700 dark:text-emerald-100">{welcomeActivity.activeDays} hari aktif dalam 7 hari terakhir.</div></div><blockquote className="border-l-4 border-mgmp-accent pl-4 text-sm leading-6 text-slate-700 dark:text-slate-200">“{homeContent.quote.text}”<footer className="mt-2 text-xs font-extrabold text-mgmp-primary">{homeContent.quote.author}</footer></blockquote><Button className="w-full" onClick={() => setOpenWelcome(false)}>Mulai</Button></div>
         </DialogContent>
       </Dialog>
 

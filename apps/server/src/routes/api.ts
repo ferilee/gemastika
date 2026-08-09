@@ -1813,6 +1813,20 @@ export function apiRouter(db: Db) {
     return c.json({ period: period || "all", members: rows });
   });
 
+  api.get("/member-activity/me", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const memberKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!memberKey) return c.json({ error: "Unauthorized" }, 401);
+    const member = await db.select({ membershipStatus: members.membershipStatus }).from(members).where(eq(members.email, memberKey)).get();
+    if (!member || parseMembershipStatus(member.membershipStatus) !== "approved") return c.json({ error: "Akses anggota aktif diperlukan." }, 403);
+    const cutoff = new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10);
+    const visits = await db.select().from(memberActivityDaily).where(eq(memberActivityDaily.memberKey, memberKey));
+    const recent = visits.filter((visit) => visit.activityDate >= cutoff);
+    const today = new Date().toISOString().slice(0, 10);
+    return c.json({ activeDays: recent.length, totalVisits: recent.reduce((total, visit) => total + visit.visitCount, 0), activeToday: recent.some((visit) => visit.activityDate === today), lastVisitedAt: [...recent].sort((a, b) => b.lastVisitedAt.localeCompare(a.lastVisitedAt))[0]?.lastVisitedAt || "" });
+  });
+
   api.post("/notifications/:id/read", async (c) => {
     const env = getEnv();
     const session = await getSession(c, env.sessionSecret);

@@ -392,8 +392,13 @@ describe("api endpoints", () => {
     const anggotaCookie = await getCookie(app, "anggota");
     expect((await app.request("http://local/api/member-activity/visit", { method: "POST" })).status).toBe(401);
     expect((await app.request("http://local/api/member-activity/visit", { method: "POST", headers: { cookie: anggotaCookie } })).status).toBe(200);
+    expect((await app.request("http://local/api/member-activity/me")).status).toBe(401);
+    const myActivityRes = await app.request("http://local/api/member-activity/me", { headers: { cookie: anggotaCookie } });
+    expect(myActivityRes.status).toBe(200);
+    expect(((await myActivityRes.json()) as { activeDays: number }).activeDays).toBeGreaterThan(0);
     const guestActivityCookie = await getCookie(app, "guest");
     expect((await app.request("http://local/api/member-activity/visit", { method: "POST", headers: { cookie: guestActivityCookie } })).status).toBe(403);
+    expect((await app.request("http://local/api/member-activity/me", { headers: { cookie: guestActivityCookie } })).status).toBe(403);
     expect((await app.request("http://local/api/admin/member-activity")).status).toBe(403);
     const pengurusActivityCookie = await getCookie(app, "pengurus");
     const memberActivityRes = await app.request("http://local/api/admin/member-activity?period=30", { headers: { cookie: pengurusActivityCookie } });
