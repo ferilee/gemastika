@@ -18,6 +18,7 @@ import {
   learningResourceReports,
   learningResourceVersions,
   learningResources,
+  memberActivityDaily,
   members,
   news,
   portfolioRatings,
@@ -1755,6 +1756,61 @@ export function apiRouter(db: Db) {
     const recipientKey = (session?.email || session?.sub || "").trim().toLowerCase();
     if (!recipientKey) return c.json([]);
     return c.json(await db.select().from(userNotifications).where(eq(userNotifications.recipientKey, recipientKey)).orderBy(desc(userNotifications.createdAt), desc(userNotifications.id)).limit(30));
+  });
+
+  api.post("/member-activity/visit", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const memberKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!memberKey) return c.json({ error: "Unauthorized" }, 401);
+    const member = await db.select({ membershipStatus: members.membershipStatus }).from(members).where(eq(members.email, memberKey)).get();
+    if (!member || parseMembershipStatus(member.membershipStatus) !== "approved") return c.json({ error: "Akses anggota aktif diperlukan." }, 403);
+    const now = new Date().toISOString();
+    const activityDate = now.slice(0, 10);
+    await db.insert(memberActivityDaily).values({ memberKey, activityDate, visitCount: 1, lastVisitedAt: now }).onConflictDoUpdate({ target: [memberActivityDaily.memberKey, memberActivityDaily.activityDate], set: { visitCount: sql`${memberActivityDaily.visitCount} + 1`, lastVisitedAt: now } });
+    return c.json({ ok: true, activityDate });
+  });
+
+  api.get("/admin/member-activity", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const period = c.req.query("period") === "7" ? 7 : c.req.query("period") === "all" ? 0 : 30;
+    const cutoff = period ? new Date(Date.now() - (period - 1) * 86_400_000).toISOString().slice(0, 10) : "";
+    const inPeriod = (value: string) => !cutoff || value.slice(0, 10) >= cutoff;
+    const [activeMembers, visits, resources, allNews, allPortfolios, allAttendances, allComments] = await Promise.all([
+      db.select().from(members).where(eq(members.membershipStatus, "approved")),
+      db.select().from(memberActivityDaily),
+      db.select().from(learningResources),
+      db.select().from(news),
+      db.select().from(portfolios),
+      db.select().from(attendances),
+      db.select().from(comments)
+    ]);
+    const rows = activeMembers.map((member) => {
+      const email = member.email.trim().toLowerCase();
+      const memberVisits = visits.filter((visit) => visit.memberKey === email && inPeriod(visit.activityDate));
+      const memberResources = resources.filter((item) => item.createdByEmail.trim().toLowerCase() === email && item.publishStatus === "approved" && inPeriod(item.createdAt));
+      const memberNews = allNews.filter((item) => item.createdByEmail.trim().toLowerCase() === email && item.publishStatus === "approved" && inPeriod(item.createdAt));
+      const memberPortfolios = allPortfolios.filter((item) => item.createdByEmail.trim().toLowerCase() === email && item.publishStatus === "approved" && inPeriod(item.createdAt));
+      const attendanceCount = allAttendances.filter((item) => item.memberId === member.id && inPeriod(item.createdAt)).length;
+      const commentCount = allComments.filter((item) => item.authorEmail.trim().toLowerCase() === email && inPeriod(item.createdAt)).length;
+      const daysActive = memberVisits.length;
+      const totalVisits = memberVisits.reduce((total, visit) => total + visit.visitCount, 0);
+      const qualityImpact = Math.min(20, Math.round(memberResources.reduce((total, item) => total + item.viewCount + item.downloadCount, 0) / 5));
+      const contributionScore = memberResources.length * 12 + memberNews.length * 8 + memberPortfolios.length * 8 + qualityImpact;
+      const participationScore = attendanceCount * 6 + commentCount * 2;
+      const visitScore = Math.min(daysActive * 2, 20);
+      return {
+        member: { id: member.id, name: member.name, email: member.email, school: member.school, xp: member.xp },
+        contribution: { resources: memberResources.length, news: memberNews.length, portfolios: memberPortfolios.length, qualityImpact, score: contributionScore },
+        participation: { attendances: attendanceCount, comments: commentCount, score: participationScore },
+        visits: { daysActive, totalVisits, lastVisitedAt: memberVisits.sort((a, b) => b.lastVisitedAt.localeCompare(a.lastVisitedAt))[0]?.lastVisitedAt || "", score: visitScore },
+        score: contributionScore + participationScore + visitScore
+      };
+    }).sort((a, b) => b.score - a.score || b.contribution.score - a.contribution.score || a.member.name.localeCompare(b.member.name));
+    return c.json({ period: period || "all", members: rows });
   });
 
   api.post("/notifications/:id/read", async (c) => {

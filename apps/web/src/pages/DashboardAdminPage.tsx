@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Archive, ArrowLeft, BarChart3, Check, Download, FileText, LayoutGrid, Link2, Quote, Search, Shield, Trash2, User, Users, X } from "lucide-react";
+import { Activity, Archive, ArrowLeft, BarChart3, Check, Clock3, Download, FileText, LayoutGrid, Link2, Quote, Search, Shield, Trophy, Trash2, User, Users, X } from "lucide-react";
 import { api } from "@/api/client";
 import type { BoardMember, HomeContent, Member, MemberRole, MembershipStatus } from "@/types";
 import { useAppData } from "@/state/AppDataContext";
@@ -32,19 +32,21 @@ function statusVariant(status: MembershipStatus) {
   return "accent";
 }
 
-type AdminSection = "home" | "role-manager" | "susunan-pengurus" | "konten-beranda" | "bank-operasional";
+type AdminSection = "home" | "role-manager" | "susunan-pengurus" | "konten-beranda" | "bank-operasional" | "aktivitas-anggota";
 type BankOperations = {
   overview: { total: number; approved: number; pending: number; rejected: number; archived: number; files: number; links: number; views: number; downloads: number; openReports: number; staleLinks: number; brokenLinks: number };
   byCategory: Array<{ category: string; count: number }>;
   topResources: Array<{ id: number; title: string; category: string; viewCount: number; downloadCount: number }>;
   openReports: Array<{ id: number; resourceId: number; reason: string; detail: string; createdAt: string }>;
 };
+type MemberActivity = { member: { id: number; name: string; email: string; school: string; xp: number }; contribution: { resources: number; news: number; portfolios: number; qualityImpact: number; score: number }; participation: { attendances: number; comments: number; score: number }; visits: { daysActive: number; totalVisits: number; lastVisitedAt: string; score: number }; score: number };
 
 function detectSection(pathname: string): AdminSection {
   if (pathname.endsWith("/role-manager")) return "role-manager";
   if (pathname.endsWith("/susunan-pengurus")) return "susunan-pengurus";
   if (pathname.endsWith("/konten-beranda")) return "konten-beranda";
   if (pathname.endsWith("/bank-operasional")) return "bank-operasional";
+  if (pathname.endsWith("/aktivitas-anggota")) return "aktivitas-anggota";
   return "home";
 }
 
@@ -64,6 +66,9 @@ export function DashboardAdminPage() {
   const [savingHomeContent, setSavingHomeContent] = useState(false);
   const [bankOperations, setBankOperations] = useState<BankOperations | null>(null);
   const [loadingBankOperations, setLoadingBankOperations] = useState(false);
+  const [activityPeriod, setActivityPeriod] = useState<"7" | "30" | "all">("30");
+  const [memberActivity, setMemberActivity] = useState<MemberActivity[]>([]);
+  const [loadingMemberActivity, setLoadingMemberActivity] = useState(false);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -160,6 +165,17 @@ export function DashboardAdminPage() {
       .finally(() => { if (!cancelled) setLoadingBankOperations(false); });
     return () => { cancelled = true; };
   }, [section]);
+
+  useEffect(() => {
+    if (section !== "aktivitas-anggota") return;
+    let cancelled = false;
+    setLoadingMemberActivity(true);
+    void api<{ members: MemberActivity[] }>(`/api/admin/member-activity?period=${activityPeriod}`)
+      .then((data) => { if (!cancelled) setMemberActivity(data.members); })
+      .catch(() => { if (!cancelled) setMemberActivity([]); })
+      .finally(() => { if (!cancelled) setLoadingMemberActivity(false); });
+    return () => { cancelled = true; };
+  }, [activityPeriod, section]);
 
   function updateBoardRow(index: number, key: "memberId" | "title" | "contact", value: string | number) {
     setBoard((prev) => prev.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
@@ -275,6 +291,15 @@ export function DashboardAdminPage() {
             </Link>
           </Card>
           <Card asChild className="rounded-2xl">
+            <Link to="/dashboard/admin/aktivitas-anggota">
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle className="text-mgmp-blue dark:text-white">Aktivitas Anggota</CardTitle>
+                <Activity className="h-5 w-5 text-amber-500" />
+              </CardHeader>
+              <CardContent className="text-sm text-slate-500 dark:text-slate-400">Pantau kontribusi, partisipasi, dan kunjungan anggota.</CardContent>
+            </Link>
+          </Card>
+          <Card asChild className="rounded-2xl">
             <Link to="/dashboard/admin/bank-operasional">
               <CardHeader className="flex-row items-center justify-between">
                 <CardTitle className="text-mgmp-blue dark:text-white">Operasional Bank</CardTitle>
@@ -315,7 +340,7 @@ export function DashboardAdminPage() {
           </Link>
         </Button>
         <h1 className="text-2xl font-extrabold text-mgmp-blue dark:text-white">
-          {section === "role-manager" ? "Role Manager" : section === "susunan-pengurus" ? "Susunan Pengurus" : section === "konten-beranda" ? "Konten Beranda" : "Operasional Bank Pembelajaran"}
+          {section === "role-manager" ? "Role Manager" : section === "susunan-pengurus" ? "Susunan Pengurus" : section === "konten-beranda" ? "Konten Beranda" : section === "bank-operasional" ? "Operasional Bank Pembelajaran" : "Aktivitas Anggota"}
         </h1>
       </div>
 
@@ -518,6 +543,13 @@ export function DashboardAdminPage() {
             <Card><CardHeader><CardTitle className="text-mgmp-blue dark:text-white">Materi Terpopuler</CardTitle></CardHeader><CardContent className="space-y-3">{bankOperations.topResources.length ? bankOperations.topResources.map((item) => <Link key={item.id} to={`/bank-pembelajaran/${item.id}`} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1 hover:bg-slate-100 dark:hover:bg-white/5"><div className="min-w-0"><div className="truncate text-sm font-bold text-slate-800 dark:text-white">{item.title}</div><div className="text-xs text-slate-500">{item.category}</div></div><div className="shrink-0 text-xs font-semibold text-slate-500">{item.viewCount} lihat · {item.downloadCount} buka</div></Link>) : <div className="text-sm text-slate-500">Belum ada materi dipublikasikan.</div>}</CardContent></Card>
           </div>
           <Card><CardHeader><CardTitle className="text-mgmp-blue dark:text-white">Laporan Terbuka</CardTitle></CardHeader><CardContent className="space-y-3">{bankOperations.openReports.length ? bankOperations.openReports.map((report) => <div key={report.id} className="rounded-lg border border-slate-200/70 p-3 dark:border-white/10"><div className="text-sm font-bold text-slate-800 dark:text-white">Materi #{report.resourceId}: {report.reason}</div>{report.detail ? <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{report.detail}</div> : null}</div>) : <div className="text-sm text-slate-500">Tidak ada laporan terbuka.</div>}<Button asChild variant="secondary" size="sm"><Link to="/dashboard/pengurus">Tindak lanjuti di dashboard pengurus</Link></Button></CardContent></Card>
+        </div>
+      ) : null}
+
+      {section === "aktivitas-anggota" ? (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div className="text-sm text-slate-500 dark:text-slate-400">Skor menggabungkan kontribusi disetujui, partisipasi, dan hari aktif. XP tetap ditampilkan terpisah.</div><Select value={activityPeriod} onValueChange={(value) => setActivityPeriod(value as "7" | "30" | "all")}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="7">7 hari terakhir</SelectItem><SelectItem value="30">30 hari terakhir</SelectItem><SelectItem value="all">Sepanjang waktu</SelectItem></SelectContent></Select></div>
+          {loadingMemberActivity ? <div className="space-y-3">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-white/5" />)}</div> : memberActivity.length === 0 ? <Card><CardContent className="py-10 text-center text-sm text-slate-500">Belum ada aktivitas anggota untuk periode ini.</CardContent></Card> : <div className="space-y-3">{memberActivity.map((item, index) => <Card key={item.member.id} className="rounded-xl"><CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] md:items-center"><div className="min-w-0"><div className="flex items-center gap-2"><span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-mgmp-primary/10 text-xs font-extrabold text-mgmp-primary">{index + 1}</span><div className="truncate font-extrabold text-slate-800 dark:text-white">{item.member.name}</div></div><div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{item.member.school}</div></div><div><div className="text-xs font-semibold text-slate-500">Kontribusi</div><div className="mt-1 text-sm font-extrabold text-slate-800 dark:text-white">{item.contribution.resources} materi · {item.contribution.news + item.contribution.portfolios} konten</div></div><div><div className="text-xs font-semibold text-slate-500">Partisipasi</div><div className="mt-1 text-sm font-extrabold text-slate-800 dark:text-white">{item.participation.attendances} hadir · {item.participation.comments} komentar</div></div><div><div className="text-xs font-semibold text-slate-500">Kunjungan</div><div className="mt-1 inline-flex items-center gap-1 text-sm font-extrabold text-slate-800 dark:text-white"><Clock3 className="h-4 w-4 text-mgmp-primary" /> {item.visits.daysActive} hari aktif</div></div><div className="flex items-center justify-between gap-3 md:justify-end"><div className="text-right"><div className="text-xs font-semibold text-slate-500">XP {item.member.xp}</div><div className="mt-1 inline-flex items-center gap-1 text-lg font-extrabold text-amber-600 dark:text-amber-300"><Trophy className="h-4 w-4" /> {item.score}</div></div></div></CardContent></Card>)}</div>}
         </div>
       ) : null}
     </div>

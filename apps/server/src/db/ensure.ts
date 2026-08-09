@@ -273,4 +273,6 @@ export async function ensureRuntimeSchema(db: Db) {
   await db.run(sql`CREATE INDEX IF NOT EXISTS learning_resource_reports_status_created_at ON learning_resource_reports (status, created_at)`);
   await db.run(sql`CREATE TABLE IF NOT EXISTS user_notifications (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, recipient_key text NOT NULL, type text NOT NULL, title text NOT NULL, message text NOT NULL DEFAULT '', href text NOT NULL DEFAULT '', read_at text NOT NULL DEFAULT '', created_at text NOT NULL DEFAULT (datetime('now')))`);
   await db.run(sql`CREATE INDEX IF NOT EXISTS user_notifications_recipient_created_at ON user_notifications (recipient_key, created_at)`);
+  await db.run(sql`CREATE TABLE IF NOT EXISTS member_activity_daily (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, member_key text NOT NULL, activity_date text NOT NULL, visit_count integer NOT NULL DEFAULT 0, last_visited_at text NOT NULL DEFAULT '', created_at text NOT NULL DEFAULT (datetime('now')))`);
+  await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS member_activity_daily_member_date_unique ON member_activity_daily (member_key, activity_date)`);
 }

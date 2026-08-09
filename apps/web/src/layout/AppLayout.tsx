@@ -121,6 +121,11 @@ export function AppLayout() {
   }, [user]);
 
   useEffect(() => {
+    if (!user) return;
+    void api("/api/member-activity/visit", { method: "POST" }).catch(() => undefined);
+  }, [user?.email, user?.sub]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!user || !showNotifBell) {

@@ -390,6 +390,15 @@ describe("api endpoints", () => {
     expect(operationsRes.status).toBe(200);
     expect(((await operationsRes.json()) as { overview: { total: number } }).overview.total).toBeGreaterThan(0);
     const anggotaCookie = await getCookie(app, "anggota");
+    expect((await app.request("http://local/api/member-activity/visit", { method: "POST" })).status).toBe(401);
+    expect((await app.request("http://local/api/member-activity/visit", { method: "POST", headers: { cookie: anggotaCookie } })).status).toBe(200);
+    const guestActivityCookie = await getCookie(app, "guest");
+    expect((await app.request("http://local/api/member-activity/visit", { method: "POST", headers: { cookie: guestActivityCookie } })).status).toBe(403);
+    expect((await app.request("http://local/api/admin/member-activity")).status).toBe(403);
+    const pengurusActivityCookie = await getCookie(app, "pengurus");
+    const memberActivityRes = await app.request("http://local/api/admin/member-activity?period=30", { headers: { cookie: pengurusActivityCookie } });
+    expect(memberActivityRes.status).toBe(200);
+    expect(((await memberActivityRes.json()) as { members: Array<{ visits: { daysActive: number } }> }).members.some((item) => item.visits.daysActive > 0)).toBe(true);
     const resourcePayload = {
       title: "LKPD Persamaan Kuadrat",
       category: "LKPD Interaktif",

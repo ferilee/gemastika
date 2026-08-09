@@ -201,6 +201,19 @@ export const userNotifications = sqliteTable("user_notifications", {
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
 });
 
+export const memberActivityDaily = sqliteTable(
+  "member_activity_daily",
+  {
+    id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+    memberKey: text("member_key").notNull(),
+    activityDate: text("activity_date").notNull(),
+    visitCount: integer("visit_count", { mode: "number" }).notNull().default(0),
+    lastVisitedAt: text("last_visited_at").notNull().default(""),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+  },
+  (t) => ({ memberDateUnique: uniqueIndex("member_activity_daily_member_date_unique").on(t.memberKey, t.activityDate) })
+);
+
 export const homeQuickLinks = sqliteTable("home_quick_links", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   title: text("title").notNull(),

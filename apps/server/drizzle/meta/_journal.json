@@ -78,6 +78,13 @@
       "when": 1786310640000,
       "tag": "0010_bank_pembelajaran_audit_tautan",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1786310700000,
+      "tag": "0011_aktivitas_anggota",
+      "breakpoints": true
     }
   ]
 }
