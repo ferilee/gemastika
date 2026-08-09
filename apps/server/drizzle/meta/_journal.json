@@ -64,6 +64,13 @@
       "when": 1786310520000,
       "tag": "0008_bank_pembelajaran_koleksi",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786310580000,
+      "tag": "0009_bank_pembelajaran_moderasi",
+      "breakpoints": true
     }
   ]
 }

@@ -227,6 +227,9 @@ export async function ensureRuntimeSchema(db: Db) {
   if (!resourceColumns.has("thumbnail_storage_key")) await db.run(sql`ALTER TABLE learning_resources ADD thumbnail_storage_key text DEFAULT '' NOT NULL`);
   if (!resourceColumns.has("view_count")) await db.run(sql`ALTER TABLE learning_resources ADD view_count integer DEFAULT 0 NOT NULL`);
   if (!resourceColumns.has("download_count")) await db.run(sql`ALTER TABLE learning_resources ADD download_count integer DEFAULT 0 NOT NULL`);
+  if (!resourceColumns.has("review_note")) await db.run(sql`ALTER TABLE learning_resources ADD review_note text DEFAULT '' NOT NULL`);
+  if (!resourceColumns.has("archived_at")) await db.run(sql`ALTER TABLE learning_resources ADD archived_at text DEFAULT '' NOT NULL`);
+  if (!resourceColumns.has("archive_reason")) await db.run(sql`ALTER TABLE learning_resources ADD archive_reason text DEFAULT '' NOT NULL`);
 
   await db.run(sql`
     CREATE TABLE IF NOT EXISTS learning_resource_versions (
@@ -263,4 +266,8 @@ export async function ensureRuntimeSchema(db: Db) {
   await db.run(sql`CREATE TABLE IF NOT EXISTS learning_resource_collections (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, owner_key text NOT NULL, name text NOT NULL, created_at text NOT NULL DEFAULT (datetime('now')))`);
   await db.run(sql`CREATE TABLE IF NOT EXISTS learning_resource_collection_items (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, collection_id integer NOT NULL, resource_id integer NOT NULL, created_at text NOT NULL DEFAULT (datetime('now')))`);
   await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_resource_collection_items_collection_resource_unique ON learning_resource_collection_items (collection_id, resource_id)`);
+  await db.run(sql`CREATE TABLE IF NOT EXISTS learning_resource_reports (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, resource_id integer NOT NULL, reporter_key text NOT NULL, reason text NOT NULL, detail text NOT NULL DEFAULT '', status text NOT NULL DEFAULT 'open', reviewed_by text NOT NULL DEFAULT '', reviewed_at text NOT NULL DEFAULT '', created_at text NOT NULL DEFAULT (datetime('now')))`);
+  await db.run(sql`CREATE INDEX IF NOT EXISTS learning_resource_reports_status_created_at ON learning_resource_reports (status, created_at)`);
+  await db.run(sql`CREATE TABLE IF NOT EXISTS user_notifications (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, recipient_key text NOT NULL, type text NOT NULL, title text NOT NULL, message text NOT NULL DEFAULT '', href text NOT NULL DEFAULT '', read_at text NOT NULL DEFAULT '', created_at text NOT NULL DEFAULT (datetime('now')))`);
+  await db.run(sql`CREATE INDEX IF NOT EXISTS user_notifications_recipient_created_at ON user_notifications (recipient_key, created_at)`);
 }

@@ -468,10 +468,32 @@ describe("api endpoints", () => {
         await app.request(`http://local/api/admin/learning-resources/${created.id}/review`, {
           method: "POST",
           headers: { "content-type": "application/json", cookie: pengurusCookie },
-          body: JSON.stringify({ status: "approved" })
+          body: JSON.stringify({ status: "approved", note: "Materi sudah sesuai dan dapat dipublikasikan." })
         })
       ).status
     ).toBe(200);
+    expect((await app.request("http://local/api/notifications", { headers: { cookie: anggotaCookie } })).status).toBe(200);
+    expect((await app.request(`http://local/api/learning-resources/${created.id}/reports`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason: "Tautan rusak" }) })).status).toBe(401);
+    const reportRes = await app.request(`http://local/api/learning-resources/${created.id}/reports`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: anggotaCookie },
+      body: JSON.stringify({ reason: "Tautan perlu diperiksa", detail: "Halaman sumber tidak dapat dibuka." })
+    });
+    expect(reportRes.status).toBe(201);
+    const report = (await reportRes.json()) as { id: number };
+    expect((await app.request("http://local/api/admin/learning-resource-reports")).status).toBe(403);
+    expect((await app.request("http://local/api/admin/learning-resource-reports", { headers: { cookie: pengurusCookie } })).status).toBe(200);
+    expect((await app.request(`http://local/api/admin/learning-resource-reports/${report.id}/review`, { method: "POST", headers: { "content-type": "application/json", cookie: pengurusCookie }, body: JSON.stringify({ status: "resolved" }) })).status).toBe(200);
+    expect((await app.request(`http://local/api/admin/learning-resources/${created.id}/link-check`, { headers: { cookie: anggotaCookie } })).status).toBe(403);
+    expect((await app.request(`http://local/api/admin/learning-resources/${created.id}/archive`, { method: "POST", headers: { "content-type": "application/json", cookie: anggotaCookie }, body: JSON.stringify({ reason: "Duplikat" }) })).status).toBe(403);
+    expect((await app.request(`http://local/api/admin/learning-resources/${created.id}/archive`, { method: "POST", headers: { "content-type": "application/json", cookie: pengurusCookie }, body: JSON.stringify({ reason: "Perlu perbaikan" }) })).status).toBe(200);
+    expect((await app.request(`http://local/api/learning-resources/${created.id}`)).status).toBe(404);
+    expect((await app.request(`http://local/api/admin/learning-resources/${created.id}/unarchive`, { method: "POST", headers: { cookie: pengurusCookie } })).status).toBe(200);
+    const editForVersion = await app.request(`http://local/api/learning-resources/${created.id}`, { method: "PATCH", headers: { "content-type": "application/json", cookie: anggotaCookie }, body: JSON.stringify({ ...resourcePayload, title: "LKPD Persamaan Kuadrat revisi", changeNote: "Perbaikan instruksi" }) });
+    expect(editForVersion.status).toBe(200);
+    const guestCookie = await getCookie(app, "guest");
+    expect((await app.request(`http://local/api/learning-resources/${created.id}/restore/1`, { method: "POST", headers: { cookie: guestCookie } })).status).toBe(403);
+    expect((await app.request(`http://local/api/learning-resources/${created.id}/restore/1`, { method: "POST", headers: { cookie: anggotaCookie } })).status).toBe(200);
     const adminCookie = await getCookie(app, "admin");
     expect((await app.request(`http://local/api/admin/learning-resources/${created.id}`, { method: "DELETE", headers: { cookie: pengurusCookie } })).status).toBe(403);
     expect((await app.request(`http://local/api/admin/learning-resources/${created.id}`, { method: "DELETE", headers: { cookie: adminCookie } })).status).toBe(200);

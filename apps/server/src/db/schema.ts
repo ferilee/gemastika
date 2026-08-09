@@ -116,6 +116,9 @@ export const learningResources = sqliteTable("learning_resources", {
   publishStatus: text("publish_status", { enum: ["pending", "approved", "rejected"] }).notNull().default("approved"),
   reviewedBy: text("reviewed_by").notNull().default(""),
   reviewedAt: text("reviewed_at").notNull().default(""),
+  reviewNote: text("review_note").notNull().default(""),
+  archivedAt: text("archived_at").notNull().default(""),
+  archiveReason: text("archive_reason").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
 });
 
@@ -171,6 +174,29 @@ export const learningResourceCollectionItems = sqliteTable(
   },
   (t) => ({ collectionResourceUnique: uniqueIndex("learning_resource_collection_items_collection_resource_unique").on(t.collectionId, t.resourceId) })
 );
+
+export const learningResourceReports = sqliteTable("learning_resource_reports", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+  resourceId: integer("resource_id", { mode: "number" }).notNull(),
+  reporterKey: text("reporter_key").notNull(),
+  reason: text("reason").notNull(),
+  detail: text("detail").notNull().default(""),
+  status: text("status", { enum: ["open", "resolved", "dismissed"] }).notNull().default("open"),
+  reviewedBy: text("reviewed_by").notNull().default(""),
+  reviewedAt: text("reviewed_at").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+});
+
+export const userNotifications = sqliteTable("user_notifications", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+  recipientKey: text("recipient_key").notNull(),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull().default(""),
+  href: text("href").notNull().default(""),
+  readAt: text("read_at").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+});
 
 export const homeQuickLinks = sqliteTable("home_quick_links", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),

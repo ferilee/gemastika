@@ -15,13 +15,15 @@ import {
   learningResourceCollections,
   learningResourceFavorites,
   learningResourceRatings,
+  learningResourceReports,
   learningResourceVersions,
   learningResources,
   members,
   news,
   portfolioRatings,
   portfolios,
-  reactions
+  reactions,
+  userNotifications
 } from "../db/schema";
 import { getSession } from "../auth/session";
 import { getEnv } from "../env";
@@ -37,6 +39,7 @@ const PUBLISH_VALUES = ["pending", "approved", "rejected"] as const;
 type PublishStatus = (typeof PUBLISH_VALUES)[number];
 const LEARNING_RESOURCE_CATEGORIES = ["RPP / Modul Ajar", "Materi Pembelajaran", "Asesmen Interaktif", "LKPD Interaktif", "Bank Soal", "Media Pembelajaran", "Praktik Baik", "Perangkat Administrasi"] as const;
 const RESOURCE_SOURCE_TYPES = ["file", "link"] as const;
+const REPORT_STATUS_VALUES = ["open", "resolved", "dismissed"] as const;
 const learningResourcePayload = z.object({
   title: z.string().trim().min(3).max(180),
   category: z.enum(LEARNING_RESOURCE_CATEGORIES),
@@ -160,6 +163,10 @@ function parsePublishStatus(raw: string | undefined): PublishStatus {
   const value = (raw || "").trim().toLowerCase();
   if (value === "pending" || value === "rejected") return value;
   return "approved";
+}
+
+function isReviewer(roles: RoleValue[]) {
+  return roles.includes("admin") || roles.includes("pengurus");
 }
 
 function filterFallbackSchools(query: string) {
@@ -1125,7 +1132,7 @@ export function apiRouter(db: Db) {
     const env = getEnv();
     const session = await getSession(c, env.sessionSecret);
     const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
-    const canReview = sessionRoles.includes("admin") || sessionRoles.includes("pengurus");
+    const canReview = isReviewer(sessionRoles);
     const viewerEmail = (session?.email || "").trim().toLowerCase();
     const visibilityWhere =
       includeAll && canReview
@@ -1413,6 +1420,7 @@ export function apiRouter(db: Db) {
             : undefined,
           category && category !== "All" ? eq(learningResources.category, category) : undefined,
           phase && phase !== "All" ? eq(learningResources.phase, phase) : undefined,
+          includeAll && canReview ? undefined : eq(learningResources.archivedAt, ""),
           visibilityWhere
         )
       )
@@ -1428,10 +1436,10 @@ export function apiRouter(db: Db) {
     const env = getEnv();
     const session = await getSession(c, env.sessionSecret);
     const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
-    const canReview = sessionRoles.includes("admin") || sessionRoles.includes("pengurus");
+    const canReview = isReviewer(sessionRoles);
     const viewerEmail = (session?.email || "").trim().toLowerCase();
     const isOwner = Boolean(viewerEmail && (row.createdByEmail || "").trim().toLowerCase() === viewerEmail);
-    if (parsePublishStatus(row.publishStatus) !== "approved" && !canReview && !isOwner) return c.json({ error: "Not found" }, 404);
+    if ((parsePublishStatus(row.publishStatus) !== "approved" || row.archivedAt) && !canReview && !isOwner) return c.json({ error: "Not found" }, 404);
     return c.json(row);
   });
 
@@ -1476,7 +1484,7 @@ export function apiRouter(db: Db) {
     const latest = await db.select({ version: learningResourceVersions.version }).from(learningResourceVersions).where(eq(learningResourceVersions.resourceId, id)).orderBy(desc(learningResourceVersions.version)).get();
     await db
       .update(learningResources)
-      .set({ ...payload, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
+      .set({ ...payload, publishStatus: "pending", reviewedBy: "", reviewedAt: "", reviewNote: "" })
       .where(eq(learningResources.id, id));
     const updated = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
     if (!updated) return c.json({ error: "Not found" }, 404);
@@ -1486,19 +1494,32 @@ export function apiRouter(db: Db) {
 
   api.post(
     "/admin/learning-resources/:id/review",
-    zValidator("json", z.object({ status: z.enum(PUBLISH_VALUES) })),
+    zValidator("json", z.object({ status: z.enum(PUBLISH_VALUES), note: z.string().trim().max(1000).default("") })),
     async (c) => {
       const env = getEnv();
       const session = await getSession(c, env.sessionSecret);
       const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
-      if (!session || (!sessionRoles.includes("admin") && !sessionRoles.includes("pengurus"))) return c.json({ error: "Forbidden" }, 403);
+      if (!session || !isReviewer(sessionRoles)) return c.json({ error: "Forbidden" }, 403);
       const id = Number(c.req.param("id"));
+      const body = c.req.valid("json");
+      if (body.status === "rejected" && !body.note) return c.json({ error: "Catatan reviewer wajib diisi saat menolak materi." }, 400);
       await db
         .update(learningResources)
-        .set({ publishStatus: c.req.valid("json").status, reviewedBy: (session.email || session.name || "").trim(), reviewedAt: new Date().toISOString() })
+        .set({ publishStatus: body.status, reviewedBy: (session.email || session.name || "").trim(), reviewedAt: new Date().toISOString(), reviewNote: body.note })
         .where(eq(learningResources.id, id));
       const updated = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
       if (!updated) return c.json({ error: "Not found" }, 404);
+      const recipientKey = updated.createdByEmail.trim().toLowerCase();
+      if (recipientKey) {
+        const approved = body.status === "approved";
+        await db.insert(userNotifications).values({
+          recipientKey,
+          type: "learning_resource_review",
+          title: approved ? "Materi disetujui" : body.status === "rejected" ? "Materi perlu diperbaiki" : "Status materi diperbarui",
+          message: body.note || (approved ? `“${updated.title}” sudah dipublikasikan.` : `“${updated.title}” menunggu tindak lanjut.`),
+          href: `/bank-pembelajaran/${updated.id}`
+        });
+      }
       return c.json(updated);
     }
   );
@@ -1593,6 +1614,123 @@ export function apiRouter(db: Db) {
     return c.json({ average: rows.reduce((sum, row) => sum + row.rating, 0) / rows.length, count: rows.length, myRating: rating });
   });
 
+  api.post("/learning-resources/:id/reports", zValidator("json", z.object({ reason: z.string().trim().min(3).max(120), detail: z.string().trim().max(1000).default("") })), async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const reporterKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!reporterKey) return c.json({ error: "Silakan masuk untuk melaporkan materi." }, 401);
+    const resourceId = Number(c.req.param("id"));
+    const resource = await db.select({ id: learningResources.id }).from(learningResources).where(eq(learningResources.id, resourceId)).get();
+    if (!resource) return c.json({ error: "Materi tidak ditemukan." }, 404);
+    const duplicate = await db.select({ id: learningResourceReports.id }).from(learningResourceReports).where(and(eq(learningResourceReports.resourceId, resourceId), eq(learningResourceReports.reporterKey, reporterKey), eq(learningResourceReports.status, "open"))).get();
+    if (duplicate) return c.json({ error: "Laporan Anda untuk materi ini masih ditinjau." }, 409);
+    const [report] = await db.insert(learningResourceReports).values({ resourceId, reporterKey, ...c.req.valid("json") }).returning();
+    return c.json(report, 201);
+  });
+
+  api.get("/admin/learning-resource-reports", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const status = c.req.query("status");
+    const rows = await db.select().from(learningResourceReports).where((REPORT_STATUS_VALUES as readonly string[]).includes(status || "") ? eq(learningResourceReports.status, status as "open" | "resolved" | "dismissed") : undefined).orderBy(desc(learningResourceReports.createdAt));
+    return c.json(rows);
+  });
+
+  api.post("/admin/learning-resource-reports/:id/review", zValidator("json", z.object({ status: z.enum(["resolved", "dismissed"] as const) })), async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const id = Number(c.req.param("id"));
+    await db.update(learningResourceReports).set({ status: c.req.valid("json").status, reviewedBy: (session.email || session.name || "").trim(), reviewedAt: new Date().toISOString() }).where(eq(learningResourceReports.id, id));
+    const updated = await db.select().from(learningResourceReports).where(eq(learningResourceReports.id, id)).get();
+    if (!updated) return c.json({ error: "Not found" }, 404);
+    return c.json(updated);
+  });
+
+  api.post("/admin/learning-resources/:id/archive", zValidator("json", z.object({ reason: z.string().trim().max(1000).default("") })), async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const id = Number(c.req.param("id"));
+    await db.update(learningResources).set({ archivedAt: new Date().toISOString(), archiveReason: c.req.valid("json").reason }).where(eq(learningResources.id, id));
+    const updated = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
+    if (!updated) return c.json({ error: "Not found" }, 404);
+    return c.json(updated);
+  });
+
+  api.post("/admin/learning-resources/:id/unarchive", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const id = Number(c.req.param("id"));
+    await db.update(learningResources).set({ archivedAt: "", archiveReason: "" }).where(eq(learningResources.id, id));
+    const updated = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
+    if (!updated) return c.json({ error: "Not found" }, 404);
+    return c.json(updated);
+  });
+
+  api.post("/learning-resources/:id/restore/:versionId", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    if (!session) return c.json({ error: "Unauthorized" }, 401);
+    const roles = (session.roles?.length ? session.roles : session.role ? [session.role] : []) as RoleValue[];
+    const email = (session.email || "").trim().toLowerCase();
+    const id = Number(c.req.param("id"));
+    const resource = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
+    if (!resource) return c.json({ error: "Not found" }, 404);
+    if (!isReviewer(roles) && resource.createdByEmail.trim().toLowerCase() !== email) return c.json({ error: "Hanya kontributor atau reviewer yang dapat memulihkan versi." }, 403);
+    const version = await db.select().from(learningResourceVersions).where(and(eq(learningResourceVersions.id, Number(c.req.param("versionId"))), eq(learningResourceVersions.resourceId, id))).get();
+    if (!version) return c.json({ error: "Versi tidak ditemukan." }, 404);
+    const latest = await db.select({ version: learningResourceVersions.version }).from(learningResourceVersions).where(eq(learningResourceVersions.resourceId, id)).orderBy(desc(learningResourceVersions.version)).get();
+    await db.update(learningResources).set({ resourceUrl: version.resourceUrl, fileName: version.fileName, storageKey: version.storageKey, publishStatus: "pending", reviewedBy: "", reviewedAt: "", reviewNote: "" }).where(eq(learningResources.id, id));
+    await db.insert(learningResourceVersions).values({ resourceId: id, version: (latest?.version || 0) + 1, resourceUrl: version.resourceUrl, fileName: version.fileName, storageKey: version.storageKey, changeNote: `Dipulihkan dari versi ${version.version}`, createdByEmail: email || resource.createdByEmail });
+    const updated = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
+    return c.json(updated);
+  });
+
+  api.get("/admin/learning-resources/:id/link-check", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const resource = await db.select().from(learningResources).where(eq(learningResources.id, Number(c.req.param("id")))).get();
+    if (!resource) return c.json({ error: "Not found" }, 404);
+    let url: URL;
+    try { url = new URL(resource.resourceUrl); } catch { return c.json({ ok: false, error: "URL materi tidak valid." }, 400); }
+    if (url.protocol !== "https:" && url.protocol !== "http:") return c.json({ ok: false, error: "Hanya tautan HTTP(S) yang dapat diperiksa." }, 400);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      let response = await fetch(url, { method: "HEAD", redirect: "follow", signal: controller.signal });
+      if (response.status === 405) response = await fetch(url, { method: "GET", redirect: "follow", signal: controller.signal });
+      return c.json({ ok: response.ok, status: response.status, checkedAt: new Date().toISOString() });
+    } catch {
+      return c.json({ ok: false, error: "Tautan tidak dapat dijangkau.", checkedAt: new Date().toISOString() });
+    } finally { clearTimeout(timeout); }
+  });
+
+  api.get("/notifications", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const recipientKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!recipientKey) return c.json([]);
+    return c.json(await db.select().from(userNotifications).where(eq(userNotifications.recipientKey, recipientKey)).orderBy(desc(userNotifications.createdAt), desc(userNotifications.id)).limit(30));
+  });
+
+  api.post("/notifications/:id/read", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const recipientKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!recipientKey) return c.json({ error: "Unauthorized" }, 401);
+    await db.update(userNotifications).set({ readAt: new Date().toISOString() }).where(and(eq(userNotifications.id, Number(c.req.param("id"))), eq(userNotifications.recipientKey, recipientKey)));
+    return c.json({ ok: true });
+  });
+
   api.delete("/admin/learning-resources/:id", async (c) => {
     const env = getEnv();
     const session = await getSession(c, env.sessionSecret);
@@ -1606,6 +1744,7 @@ export function apiRouter(db: Db) {
       await tx.delete(comments).where(and(eq(comments.targetType, "learning_resource"), eq(comments.targetId, id)));
       await tx.delete(learningResourceFavorites).where(eq(learningResourceFavorites.resourceId, id));
       await tx.delete(learningResourceRatings).where(eq(learningResourceRatings.resourceId, id));
+      await tx.delete(learningResourceReports).where(eq(learningResourceReports.resourceId, id));
       await tx.delete(learningResourceVersions).where(eq(learningResourceVersions.resourceId, id));
       await tx.delete(learningResources).where(eq(learningResources.id, id));
     });

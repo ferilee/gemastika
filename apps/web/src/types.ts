@@ -83,11 +83,16 @@ export type LearningResource = {
   publishStatus: "pending" | "approved" | "rejected";
   reviewedBy: string;
   reviewedAt: string;
+  reviewNote: string;
+  archivedAt: string;
+  archiveReason: string;
   createdAt: string;
 };
 
 export type LearningResourceVersion = { id: number; resourceId: number; version: number; resourceUrl: string; fileName: string; storageKey: string; changeNote: string; createdByEmail: string; createdAt: string };
 export type LearningResourceCollection = { id: number; ownerKey: string; name: string; createdAt: string; resourceIds: number[] };
+export type LearningResourceReport = { id: number; resourceId: number; reporterKey: string; reason: string; detail: string; status: "open" | "resolved" | "dismissed"; reviewedBy: string; reviewedAt: string; createdAt: string };
+export type UserNotification = { id: number; recipientKey: string; type: string; title: string; message: string; href: string; readAt: string; createdAt: string };
 
 export type BoardMember = {
   id: number;

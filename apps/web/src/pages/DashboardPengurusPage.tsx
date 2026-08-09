@@ -1,12 +1,13 @@
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, CalendarCheck, Newspaper, UserPlus } from "lucide-react";
+import { BookOpen, CalendarCheck, CheckCircle2, ExternalLink, Flag, Newspaper, UserPlus } from "lucide-react";
 import { api } from "@/api/client";
-import type { LearningResource, Member, MembershipStatus, News, Portfolio } from "@/types";
+import type { LearningResource, LearningResourceReport, Member, MembershipStatus, News, Portfolio } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAppData } from "@/state/AppDataContext";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 
 export function DashboardPengurusPage() {
   const { agendas, news, members, patchMember, reload } = useAppData();
@@ -14,6 +15,8 @@ export function DashboardPengurusPage() {
   const [pendingNews, setPendingNews] = useState<News[]>([]);
   const [pendingPortfolios, setPendingPortfolios] = useState<Portfolio[]>([]);
   const [pendingResources, setPendingResources] = useState<LearningResource[]>([]);
+  const [resourceReports, setResourceReports] = useState<LearningResourceReport[]>([]);
+  const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
   const [savingContentKey, setSavingContentKey] = useState<string>("");
   const upcoming = agendas.find((a) => a.date) || null;
   const pendingMembers = useMemo(() => members.filter((m) => (m.membershipStatus || "approved") === "pending"), [members]);
@@ -22,20 +25,23 @@ export function DashboardPengurusPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [allNews, allPortfolios, allResources] = await Promise.all([
+        const [allNews, allPortfolios, allResources, reports] = await Promise.all([
           api<News[]>("/api/news?includeAll=1"),
           api<Portfolio[]>("/api/portfolios?includeAll=1&limit=60"),
-          api<LearningResource[]>("/api/learning-resources?includeAll=1")
+          api<LearningResource[]>("/api/learning-resources?includeAll=1"),
+          api<LearningResourceReport[]>("/api/admin/learning-resource-reports?status=open")
         ]);
         if (cancelled) return;
         setPendingNews(allNews.filter((n) => (n.publishStatus || "approved") === "pending"));
         setPendingPortfolios(allPortfolios.filter((p) => (p.publishStatus || "approved") === "pending"));
         setPendingResources(allResources.filter((item) => (item.publishStatus || "approved") === "pending"));
+        setResourceReports(reports);
       } catch {
         if (!cancelled) {
           setPendingNews([]);
           setPendingPortfolios([]);
           setPendingResources([]);
+          setResourceReports([]);
         }
       }
     })();
@@ -91,10 +97,36 @@ export function DashboardPengurusPage() {
     const key = `resource-${item.id}-${status}`;
     setSavingContentKey(key);
     try {
-      await api(`/api/admin/learning-resources/${item.id}/review`, { method: "POST", body: JSON.stringify({ status }) });
+      await api(`/api/admin/learning-resources/${item.id}/review`, { method: "POST", body: JSON.stringify({ status, note: reviewNotes[item.id] || "" }) });
       setPendingResources((prev) => prev.filter((resource) => resource.id !== item.id));
     } catch (e) {
       alert(e instanceof Error ? e.message : "Gagal meninjau materi.");
+    } finally {
+      setSavingContentKey("");
+    }
+  }
+
+  async function checkResourceLink(item: LearningResource) {
+    const key = `resource-${item.id}-link`;
+    setSavingContentKey(key);
+    try {
+      const result = await api<{ ok: boolean; status?: number; error?: string }>(`/api/admin/learning-resources/${item.id}/link-check`);
+      alert(result.ok ? `Tautan dapat diakses (HTTP ${result.status}).` : result.error || `Tautan bermasalah (HTTP ${result.status || "-"}).`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Gagal memeriksa tautan materi.");
+    } finally {
+      setSavingContentKey("");
+    }
+  }
+
+  async function resolveReport(report: LearningResourceReport, status: "resolved" | "dismissed") {
+    const key = `report-${report.id}-${status}`;
+    setSavingContentKey(key);
+    try {
+      await api(`/api/admin/learning-resource-reports/${report.id}/review`, { method: "POST", body: JSON.stringify({ status }) });
+      setResourceReports((items) => items.filter((item) => item.id !== report.id));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Gagal memperbarui laporan.");
     } finally {
       setSavingContentKey("");
     }
@@ -192,11 +224,17 @@ export function DashboardPengurusPage() {
                 <div className="flex items-start justify-between gap-3"><div><div className="font-extrabold text-slate-800 dark:text-white">{item.title}</div><div className="text-xs text-slate-500 dark:text-slate-400">{item.category} • {item.phase} • {item.grade}</div></div><BookOpen className="h-5 w-5 shrink-0 text-mgmp-primary" /></div>
                 <div className="mt-2 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line">{item.description}</div>
                 <a href={item.resourceUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-bold text-mgmp-primary hover:underline">Buka materi untuk ditinjau</a>
-                <div className="mt-2 flex gap-2"><Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-500 dark:hover:bg-emerald-400" disabled={savingContentKey === `resource-${item.id}-approved`} onClick={() => void reviewResource(item, "approved")}>Approve</Button><Button size="sm" className="bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400" disabled={savingContentKey === `resource-${item.id}-rejected`} onClick={() => void reviewResource(item, "rejected")}>Tolak</Button></div>
+                <Textarea className="mt-3 min-h-20" value={reviewNotes[item.id] || ""} onChange={(event) => setReviewNotes((notes) => ({ ...notes, [item.id]: event.target.value }))} placeholder="Catatan untuk kontributor, wajib diisi saat menolak." />
+                <div className="mt-2 flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={savingContentKey === `resource-${item.id}-link`} onClick={() => void checkResourceLink(item)}><ExternalLink className="h-4 w-4" /> Cek tautan</Button><Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-500 dark:hover:bg-emerald-400" disabled={savingContentKey === `resource-${item.id}-approved`} onClick={() => void reviewResource(item, "approved")}>Approve</Button><Button size="sm" className="bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-500" disabled={savingContentKey === `resource-${item.id}-rejected`} onClick={() => void reviewResource(item, "rejected")}>Tolak</Button></div>
               </div>
             ))
           )}
         </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between"><CardTitle className="text-mgmp-blue dark:text-white">Laporan Materi</CardTitle><Badge className={resourceReports.length ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"}>{resourceReports.length} Terbuka</Badge></CardHeader>
+        <CardContent className="space-y-3">{resourceReports.length === 0 ? <div className="text-sm text-slate-500 dark:text-slate-300">Tidak ada laporan materi yang perlu ditindaklanjuti.</div> : resourceReports.map((report) => <div key={report.id} className="rounded-xl border border-slate-200/70 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5"><div className="flex items-start justify-between gap-3"><div><div className="font-extrabold text-slate-800 dark:text-white">{pendingResources.find((item) => item.id === report.resourceId)?.title || `Materi #${report.resourceId}`}</div><div className="text-xs text-slate-500 dark:text-slate-400">{report.reason}</div></div><Flag className="h-5 w-5 text-amber-500" /></div>{report.detail ? <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">{report.detail}</div> : null}<div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => void resolveReport(report, "resolved")} disabled={savingContentKey === `report-${report.id}-resolved`}><CheckCircle2 className="h-4 w-4" /> Selesaikan</Button><Button size="sm" variant="secondary" onClick={() => void resolveReport(report, "dismissed")} disabled={savingContentKey === `report-${report.id}-dismissed`}>Abaikan</Button></div></div>)}</CardContent>
       </Card>
 
       <Card>
