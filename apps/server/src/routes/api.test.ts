@@ -407,6 +407,38 @@ describe("api endpoints", () => {
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { id: number; publishStatus: string };
     expect(created.publishStatus).toBe("pending");
+    expect((await app.request(`http://local/api/learning-resources/${created.id}/versions`)).status).toBe(200);
+    expect(
+      (
+        await app.request(`http://local/api/learning-resources/${created.id}/access`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "view" })
+        })
+      ).status
+    ).toBe(200);
+    expect((await app.request(`http://local/api/learning-resource-favorites/${created.id}/toggle`, { method: "POST" })).status).toBe(401);
+    expect((await app.request(`http://local/api/learning-resource-favorites/${created.id}/toggle`, { method: "POST", headers: { cookie: anggotaCookie } })).status).toBe(200);
+    expect((await app.request(`http://local/api/learning-resource-favorites`, { headers: { cookie: anggotaCookie } })).status).toBe(200);
+    expect((await app.request(`http://local/api/learning-resource-ratings?resourceId=${created.id}`)).status).toBe(200);
+    expect(
+      (
+        await app.request("http://local/api/learning-resource-ratings", {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: anggotaCookie },
+          body: JSON.stringify({ resourceId: created.id, rating: 5 })
+        })
+      ).status
+    ).toBe(200);
+    expect(
+      (
+        await app.request("http://local/api/comments", {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: anggotaCookie },
+          body: JSON.stringify({ targetType: "learning_resource", targetId: created.id, content: "Materi sangat membantu" })
+        })
+      ).status
+    ).toBe(201);
     expect((await app.request(`http://local/api/learning-resources/${created.id}`)).status).toBe(404);
     expect((await app.request(`http://local/api/learning-resources/${created.id}`, { headers: { cookie: anggotaCookie } })).status).toBe(200);
 

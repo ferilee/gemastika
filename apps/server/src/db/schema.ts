@@ -94,7 +94,7 @@ export const portfolios = sqliteTable("portfolios", {
 export const learningResources = sqliteTable("learning_resources", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   title: text("title").notNull(),
-  category: text("category", { enum: ["RPP / Modul Ajar", "Materi Pembelajaran", "Asesmen Interaktif", "LKPD Interaktif"] })
+  category: text("category", { enum: ["RPP / Modul Ajar", "Materi Pembelajaran", "Asesmen Interaktif", "LKPD Interaktif", "Bank Soal", "Media Pembelajaran", "Praktik Baik", "Perangkat Administrasi"] })
     .notNull()
     .default("RPP / Modul Ajar"),
   description: text("description").notNull().default(""),
@@ -107,12 +107,52 @@ export const learningResources = sqliteTable("learning_resources", {
   resourceUrl: text("resource_url").notNull().default(""),
   fileName: text("file_name").notNull().default(""),
   thumbnailUrl: text("thumbnail_url").notNull().default(""),
+  tags: text("tags").notNull().default(""),
+  storageKey: text("storage_key").notNull().default(""),
+  thumbnailStorageKey: text("thumbnail_storage_key").notNull().default(""),
+  viewCount: integer("view_count", { mode: "number" }).notNull().default(0),
+  downloadCount: integer("download_count", { mode: "number" }).notNull().default(0),
   createdByEmail: text("created_by_email").notNull().default(""),
   publishStatus: text("publish_status", { enum: ["pending", "approved", "rejected"] }).notNull().default("approved"),
   reviewedBy: text("reviewed_by").notNull().default(""),
   reviewedAt: text("reviewed_at").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
 });
+
+export const learningResourceVersions = sqliteTable("learning_resource_versions", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+  resourceId: integer("resource_id", { mode: "number" }).notNull(),
+  version: integer("version", { mode: "number" }).notNull(),
+  resourceUrl: text("resource_url").notNull().default(""),
+  fileName: text("file_name").notNull().default(""),
+  storageKey: text("storage_key").notNull().default(""),
+  changeNote: text("change_note").notNull().default(""),
+  createdByEmail: text("created_by_email").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+});
+
+export const learningResourceFavorites = sqliteTable(
+  "learning_resource_favorites",
+  {
+    id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+    resourceId: integer("resource_id", { mode: "number" }).notNull(),
+    userKey: text("user_key").notNull(),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+  },
+  (t) => ({ resourceUserUnique: uniqueIndex("learning_resource_favorites_resource_user_unique").on(t.resourceId, t.userKey) })
+);
+
+export const learningResourceRatings = sqliteTable(
+  "learning_resource_ratings",
+  {
+    id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+    resourceId: integer("resource_id", { mode: "number" }).notNull(),
+    userKey: text("user_key").notNull(),
+    rating: integer("rating", { mode: "number" }).notNull(),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+  },
+  (t) => ({ resourceUserUnique: uniqueIndex("learning_resource_ratings_resource_user_unique").on(t.resourceId, t.userKey) })
+);
 
 export const homeQuickLinks = sqliteTable("home_quick_links", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
@@ -130,7 +170,7 @@ export const homeSettings = sqliteTable("home_settings", {
 
 export const comments = sqliteTable("comments", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
-  targetType: text("target_type", { enum: ["news", "portfolio"] }).notNull(),
+  targetType: text("target_type", { enum: ["news", "portfolio", "learning_resource"] }).notNull(),
   targetId: integer("target_id", { mode: "number" }).notNull(),
   parentId: integer("parent_id", { mode: "number" }),
   authorName: text("author_name").notNull().default("Guest"),

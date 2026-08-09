@@ -219,4 +219,45 @@ export async function ensureRuntimeSchema(db: Db) {
       created_at text NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  const resourceRows = (await db.all(sql`PRAGMA table_info(learning_resources)`)) as TableInfoRow[];
+  const resourceColumns = new Set(resourceRows.map((row) => row.name));
+  if (!resourceColumns.has("tags")) await db.run(sql`ALTER TABLE learning_resources ADD tags text DEFAULT '' NOT NULL`);
+  if (!resourceColumns.has("storage_key")) await db.run(sql`ALTER TABLE learning_resources ADD storage_key text DEFAULT '' NOT NULL`);
+  if (!resourceColumns.has("thumbnail_storage_key")) await db.run(sql`ALTER TABLE learning_resources ADD thumbnail_storage_key text DEFAULT '' NOT NULL`);
+  if (!resourceColumns.has("view_count")) await db.run(sql`ALTER TABLE learning_resources ADD view_count integer DEFAULT 0 NOT NULL`);
+  if (!resourceColumns.has("download_count")) await db.run(sql`ALTER TABLE learning_resources ADD download_count integer DEFAULT 0 NOT NULL`);
+
+  await db.run(sql`
+    CREATE TABLE IF NOT EXISTS learning_resource_versions (
+      id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+      resource_id integer NOT NULL,
+      version integer NOT NULL,
+      resource_url text NOT NULL DEFAULT '',
+      file_name text NOT NULL DEFAULT '',
+      storage_key text NOT NULL DEFAULT '',
+      change_note text NOT NULL DEFAULT '',
+      created_by_email text NOT NULL DEFAULT '',
+      created_at text NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  await db.run(sql`
+    CREATE TABLE IF NOT EXISTS learning_resource_favorites (
+      id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+      resource_id integer NOT NULL,
+      user_key text NOT NULL,
+      created_at text NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_resource_favorites_resource_user_unique ON learning_resource_favorites (resource_id, user_key)`);
+  await db.run(sql`
+    CREATE TABLE IF NOT EXISTS learning_resource_ratings (
+      id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+      resource_id integer NOT NULL,
+      user_key text NOT NULL,
+      rating integer NOT NULL,
+      created_at text NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS learning_resource_ratings_resource_user_unique ON learning_resource_ratings (resource_id, user_key)`);
 }

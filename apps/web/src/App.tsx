@@ -30,6 +30,7 @@ export default function App() {
               <Route path="/berita/:permalink" element={<BeritaPage />} />
               <Route path="/portofolio" element={<PortofolioPage />} />
               <Route path="/bank-pembelajaran" element={<BankPembelajaranPage />} />
+              <Route path="/bank-pembelajaran/:permalink" element={<BankPembelajaranPage />} />
 
               <Route
                 path="/dashboard"

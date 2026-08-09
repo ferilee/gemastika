@@ -58,7 +58,7 @@ export type Portfolio = {
   reviewedAt: string;
 };
 
-export type LearningResourceCategory = "RPP / Modul Ajar" | "Materi Pembelajaran" | "Asesmen Interaktif" | "LKPD Interaktif";
+export type LearningResourceCategory = "RPP / Modul Ajar" | "Materi Pembelajaran" | "Asesmen Interaktif" | "LKPD Interaktif" | "Bank Soal" | "Media Pembelajaran" | "Praktik Baik" | "Perangkat Administrasi";
 
 export type LearningResource = {
   id: number;
@@ -74,12 +74,19 @@ export type LearningResource = {
   resourceUrl: string;
   fileName: string;
   thumbnailUrl: string;
+  tags: string;
+  storageKey: string;
+  thumbnailStorageKey: string;
+  viewCount: number;
+  downloadCount: number;
   createdByEmail: string;
   publishStatus: "pending" | "approved" | "rejected";
   reviewedBy: string;
   reviewedAt: string;
   createdAt: string;
 };
+
+export type LearningResourceVersion = { id: number; resourceId: number; version: number; resourceUrl: string; fileName: string; storageKey: string; changeNote: string; createdByEmail: string; createdAt: string };
 
 export type BoardMember = {
   id: number;
@@ -109,7 +116,7 @@ export type HomeContent = {
   quote: HomeQuote;
 };
 
-export type CommentTargetType = "news" | "portfolio";
+export type CommentTargetType = "news" | "portfolio" | "learning_resource";
 
 export type CommentItem = {
   id: number;

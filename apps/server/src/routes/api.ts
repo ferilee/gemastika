@@ -11,6 +11,9 @@ import {
   comments,
   homeQuickLinks,
   homeSettings,
+  learningResourceFavorites,
+  learningResourceRatings,
+  learningResourceVersions,
   learningResources,
   members,
   news,
@@ -30,7 +33,7 @@ const SCHOOL_CACHE_TTL_MS = 1000 * 60 * 30;
 const ATTENDANCE_XP_DEFAULT = 10;
 const PUBLISH_VALUES = ["pending", "approved", "rejected"] as const;
 type PublishStatus = (typeof PUBLISH_VALUES)[number];
-const LEARNING_RESOURCE_CATEGORIES = ["RPP / Modul Ajar", "Materi Pembelajaran", "Asesmen Interaktif", "LKPD Interaktif"] as const;
+const LEARNING_RESOURCE_CATEGORIES = ["RPP / Modul Ajar", "Materi Pembelajaran", "Asesmen Interaktif", "LKPD Interaktif", "Bank Soal", "Media Pembelajaran", "Praktik Baik", "Perangkat Administrasi"] as const;
 const RESOURCE_SOURCE_TYPES = ["file", "link"] as const;
 const learningResourcePayload = z.object({
   title: z.string().trim().min(3).max(180),
@@ -44,7 +47,11 @@ const learningResourcePayload = z.object({
   sourceType: z.enum(RESOURCE_SOURCE_TYPES),
   resourceUrl: z.string().url(),
   fileName: z.string().trim().max(255).default(""),
-  thumbnailUrl: z.string().url().or(z.literal("")).default("")
+  thumbnailUrl: z.string().url().or(z.literal("")).default(""),
+  tags: z.string().trim().max(500).default(""),
+  storageKey: z.string().trim().max(500).default(""),
+  thumbnailStorageKey: z.string().trim().max(500).default(""),
+  changeNote: z.string().trim().max(500).default("")
 });
 const schoolCache = new Map<string, { expiresAt: number; items: SchoolItem[] }>();
 const SCHOOL_FALLBACK: SchoolItem[] = [
@@ -292,7 +299,7 @@ export function apiRouter(db: Db) {
     const body = await c.req.parseBody();
     const fileLike = body.file;
     const scope = String(body.scope || "misc").trim().toLowerCase();
-    const folder = scope === "news" || scope === "portfolio" ? scope : "misc";
+    const folder = scope === "news" || scope === "portfolio" || scope === "learning-resource" ? scope : "misc";
     const file = Array.isArray(fileLike) ? fileLike[0] : fileLike;
     if (!(file instanceof File)) return c.json({ error: "File gambar tidak ditemukan." }, 400);
     if (!file.type || !["image/jpeg", "image/png", "image/webp"].includes(file.type.toLowerCase())) {
@@ -426,7 +433,7 @@ export function apiRouter(db: Db) {
     zValidator(
       "json",
       z.object({
-        targetType: z.enum(["news", "portfolio"]),
+        targetType: z.enum(["news", "portfolio", "learning_resource"]),
         targetId: z.number().int().positive(),
         parentId: z.number().int().positive().nullable().optional(),
         content: z.string().min(2).max(2000)
@@ -444,9 +451,12 @@ export function apiRouter(db: Db) {
       if (body.targetType === "news") {
         const exists = await db.select({ id: news.id }).from(news).where(eq(news.id, body.targetId)).get();
         if (!exists) return c.json({ error: "Berita tidak ditemukan." }, 404);
-      } else {
+      } else if (body.targetType === "portfolio") {
         const exists = await db.select({ id: portfolios.id }).from(portfolios).where(eq(portfolios.id, body.targetId)).get();
         if (!exists) return c.json({ error: "Portofolio tidak ditemukan." }, 404);
+      } else {
+        const exists = await db.select({ id: learningResources.id }).from(learningResources).where(eq(learningResources.id, body.targetId)).get();
+        if (!exists) return c.json({ error: "Materi tidak ditemukan." }, 404);
       }
 
       if (body.parentId) {
@@ -1431,10 +1441,20 @@ export function apiRouter(db: Db) {
     const me = email ? await db.select().from(members).where(eq(members.email, email)).get() : null;
     if (!me || parseMembershipStatus(me.membershipStatus) !== "approved") return c.json({ error: "Akses khusus anggota aktif." }, 403);
 
+    const { changeNote, ...payload } = c.req.valid("json");
     const [inserted] = await db
       .insert(learningResources)
-      .values({ ...c.req.valid("json"), createdByEmail: email, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
+      .values({ ...payload, createdByEmail: email, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
       .returning();
+    await db.insert(learningResourceVersions).values({
+      resourceId: inserted.id,
+      version: 1,
+      resourceUrl: inserted.resourceUrl,
+      fileName: inserted.fileName,
+      storageKey: inserted.storageKey,
+      changeNote: changeNote || "Versi awal",
+      createdByEmail: email
+    });
     return c.json(inserted, 201);
   });
 
@@ -1450,11 +1470,16 @@ export function apiRouter(db: Db) {
 
     const me = await db.select().from(members).where(eq(members.email, email)).get();
     if (!me || parseMembershipStatus(me.membershipStatus) !== "approved") return c.json({ error: "Akses khusus anggota aktif." }, 403);
+    const { changeNote, ...payload } = c.req.valid("json");
+    const latest = await db.select({ version: learningResourceVersions.version }).from(learningResourceVersions).where(eq(learningResourceVersions.resourceId, id)).orderBy(desc(learningResourceVersions.version)).get();
     await db
       .update(learningResources)
-      .set({ ...c.req.valid("json"), publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
+      .set({ ...payload, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
       .where(eq(learningResources.id, id));
-    return c.json(await db.select().from(learningResources).where(eq(learningResources.id, id)).get());
+    const updated = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
+    if (!updated) return c.json({ error: "Not found" }, 404);
+    await db.insert(learningResourceVersions).values({ resourceId: id, version: (latest?.version || 0) + 1, resourceUrl: updated.resourceUrl, fileName: updated.fileName, storageKey: updated.storageKey, changeNote: changeNote || "Pembaruan materi", createdByEmail: email });
+    return c.json(updated);
   });
 
   api.post(
@@ -1476,15 +1501,85 @@ export function apiRouter(db: Db) {
     }
   );
 
+  api.get("/learning-resources/:id/versions", async (c) => {
+    const id = Number(c.req.param("id"));
+    const exists = await db.select({ id: learningResources.id }).from(learningResources).where(eq(learningResources.id, id)).get();
+    if (!exists) return c.json({ error: "Not found" }, 404);
+    return c.json(await db.select().from(learningResourceVersions).where(eq(learningResourceVersions.resourceId, id)).orderBy(desc(learningResourceVersions.version)));
+  });
+
+  api.post("/learning-resources/:id/access", zValidator("json", z.object({ type: z.enum(["view", "download"]) })), async (c) => {
+    const id = Number(c.req.param("id"));
+    const field = c.req.valid("json").type === "download" ? { downloadCount: sql`${learningResources.downloadCount} + 1` } : { viewCount: sql`${learningResources.viewCount} + 1` };
+    await db.update(learningResources).set(field).where(eq(learningResources.id, id));
+    const updated = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
+    if (!updated) return c.json({ error: "Not found" }, 404);
+    return c.json(updated);
+  });
+
+  api.get("/learning-resource-favorites", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const userKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!userKey) return c.json([]);
+    const rows = await db.select({ resourceId: learningResourceFavorites.resourceId }).from(learningResourceFavorites).where(eq(learningResourceFavorites.userKey, userKey));
+    return c.json(rows.map((row) => row.resourceId));
+  });
+
+  api.post("/learning-resource-favorites/:id/toggle", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const userKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!userKey) return c.json({ error: "Silakan masuk untuk menyimpan materi." }, 401);
+    const resourceId = Number(c.req.param("id"));
+    const existing = await db.select().from(learningResourceFavorites).where(and(eq(learningResourceFavorites.resourceId, resourceId), eq(learningResourceFavorites.userKey, userKey))).get();
+    if (existing) { await db.delete(learningResourceFavorites).where(eq(learningResourceFavorites.id, existing.id)); return c.json({ active: false }); }
+    await db.insert(learningResourceFavorites).values({ resourceId, userKey });
+    return c.json({ active: true });
+  });
+
+  api.get("/learning-resource-ratings", async (c) => {
+    const resourceId = Number(c.req.query("resourceId") || 0);
+    if (!resourceId) return c.json({ average: 0, count: 0, myRating: 0 });
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const userKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    const rows = await db.select().from(learningResourceRatings).where(eq(learningResourceRatings.resourceId, resourceId));
+    return c.json({ average: rows.length ? rows.reduce((sum, row) => sum + row.rating, 0) / rows.length : 0, count: rows.length, myRating: rows.find((row) => row.userKey === userKey)?.rating || 0 });
+  });
+
+  api.post("/learning-resource-ratings", zValidator("json", z.object({ resourceId: z.number().int().positive(), rating: z.number().int().min(1).max(5) })), async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const userKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    if (!userKey) return c.json({ error: "Silakan masuk untuk memberi rating." }, 401);
+    const { resourceId, rating } = c.req.valid("json");
+    await db.insert(learningResourceRatings).values({ resourceId, userKey, rating }).onConflictDoUpdate({ target: [learningResourceRatings.resourceId, learningResourceRatings.userKey], set: { rating } });
+    const rows = await db.select().from(learningResourceRatings).where(eq(learningResourceRatings.resourceId, resourceId));
+    return c.json({ average: rows.reduce((sum, row) => sum + row.rating, 0) / rows.length, count: rows.length, myRating: rating });
+  });
+
   api.delete("/admin/learning-resources/:id", async (c) => {
     const env = getEnv();
     const session = await getSession(c, env.sessionSecret);
     const sessionRoles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
     if (!session || !sessionRoles.includes("admin")) return c.json({ error: "Forbidden" }, 403);
     const id = Number(c.req.param("id"));
-    const existing = await db.select({ id: learningResources.id }).from(learningResources).where(eq(learningResources.id, id)).get();
+    const existing = await db.select().from(learningResources).where(eq(learningResources.id, id)).get();
     if (!existing) return c.json({ error: "Not found" }, 404);
-    await db.delete(learningResources).where(eq(learningResources.id, id));
+    const versions = await db.select({ storageKey: learningResourceVersions.storageKey }).from(learningResourceVersions).where(eq(learningResourceVersions.resourceId, id));
+    await db.transaction(async (tx) => {
+      await tx.delete(comments).where(and(eq(comments.targetType, "learning_resource"), eq(comments.targetId, id)));
+      await tx.delete(learningResourceFavorites).where(eq(learningResourceFavorites.resourceId, id));
+      await tx.delete(learningResourceRatings).where(eq(learningResourceRatings.resourceId, id));
+      await tx.delete(learningResourceVersions).where(eq(learningResourceVersions.resourceId, id));
+      await tx.delete(learningResources).where(eq(learningResources.id, id));
+    });
+    if (env.s3Endpoint && env.s3AccessKey && env.s3SecretKey && env.s3Bucket) {
+      const keys = new Set([existing.storageKey, existing.thumbnailStorageKey, ...versions.map((version) => version.storageKey)].filter(Boolean));
+      const s3 = new S3Client({ endpoint: env.s3Endpoint, accessKeyId: env.s3AccessKey, secretAccessKey: env.s3SecretKey, bucket: env.s3Bucket, region: env.s3Region, virtualHostedStyle: !env.s3ForcePathStyle });
+      await Promise.all(Array.from(keys).map((key) => s3.file(key).delete().catch((error) => console.warn("delete_resource_object_error:", String(error)))));
+    }
     return c.json({ ok: true, id });
   });
 
