@@ -404,6 +404,7 @@ describe("api endpoints", () => {
     const operationsRes = await app.request("http://local/api/admin/learning-resources/operations", { headers: { cookie: initialAdminCookie } });
     expect(operationsRes.status).toBe(200);
     expect(((await operationsRes.json()) as { overview: { total: number } }).overview.total).toBeGreaterThan(0);
+    expect((await app.request("http://local/api/notifications/review-queue", { headers: { cookie: initialAdminCookie } })).status).toBe(200);
     const anggotaCookie = await getCookie(app, "anggota");
     expect((await app.request("http://local/api/member-activity/visit", { method: "POST" })).status).toBe(401);
     expect((await app.request("http://local/api/member-activity/visit", { method: "POST", headers: { cookie: anggotaCookie } })).status).toBe(200);

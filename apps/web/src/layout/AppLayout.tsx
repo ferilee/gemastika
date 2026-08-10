@@ -10,8 +10,10 @@ import { GlobalAlertDialog } from "@/components/GlobalAlertDialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { api } from "@/api/client";
-import type { LearningResource, Member, UserNotification } from "@/types";
+import type { Member, UserNotification } from "@/types";
 import { useAppData } from "@/state/AppDataContext";
+
+type ReviewQueueItem = { count: number; title: string; message: string; href: string };
 
 function NavItem({
   to,
@@ -84,8 +86,10 @@ export function AppLayout() {
   const { homeContent } = useAppData();
   const showAdminBottomItem = hasRole(user, "admin");
   const showDashboardNav = hasRole(user, "admin") || hasRole(user, "pengurus");
+  const isReviewer = hasRole(user, "admin") || hasRole(user, "pengurus");
   const showNotifBell = Boolean(user);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([]);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [openNotifications, setOpenNotifications] = useState(false);
   const [realtimeTick, setRealtimeTick] = useState(0);
@@ -155,29 +159,24 @@ export function AppLayout() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!user || !showNotifBell) {
+      if (!user || !isReviewer) {
         setPendingApprovalCount(0);
+        setReviewQueue([]);
         return;
       }
       try {
-        const [allNews, allPortfolios, allResources] = await Promise.all([
-          api<Array<{ publishStatus?: string }>>("/api/news?includeAll=1"),
-          api<Array<{ publishStatus?: string }>>("/api/portfolios?includeAll=1&limit=60"),
-          api<LearningResource[]>("/api/learning-resources?includeAll=1")
-        ]);
+        const queue = await api<ReviewQueueItem[]>("/api/notifications/review-queue");
         if (cancelled) return;
-        const pendingNews = allNews.filter((n) => (n.publishStatus || "approved") === "pending").length;
-        const pendingPortfolios = allPortfolios.filter((p) => (p.publishStatus || "approved") === "pending").length;
-        const pendingResources = allResources.filter((item) => (item.publishStatus || "approved") === "pending").length;
-        setPendingApprovalCount(pendingNews + pendingPortfolios + pendingResources);
+        setReviewQueue(queue);
+        setPendingApprovalCount(queue.reduce((total, item) => total + item.count, 0));
       } catch {
-        if (!cancelled) setPendingApprovalCount(0);
+        if (!cancelled) { setPendingApprovalCount(0); setReviewQueue([]); }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [realtimeTick, showNotifBell, user]);
+  }, [isReviewer, realtimeTick, user]);
 
   useEffect(() => {
     if (!user) { setNotifications([]); return; }
@@ -346,7 +345,9 @@ export function AppLayout() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Notifikasi</DialogTitle><DialogDescription>Pembaruan untuk materi dan aktivitas Anda.</DialogDescription></DialogHeader>
           <div className="max-h-80 space-y-2 overflow-y-auto px-6 pb-6">
-            {notifications.length ? notifications.map((notification) => <button type="button" key={notification.id} onClick={() => void openNotification(notification)} className={["w-full rounded-lg border p-3 text-left transition", notification.readAt ? "border-slate-200/70 bg-white/50 dark:border-white/10 dark:bg-white/5" : "border-mgmp-primary/30 bg-mgmp-primary/5 dark:bg-mgmp-primary/10"].join(" ")}><div className="text-sm font-extrabold text-slate-800 dark:text-white">{notification.title}</div>{notification.message ? <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{notification.message}</div> : null}</button>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada notifikasi baru.</div>}
+            {reviewQueue.map((item) => <button type="button" key={item.title} onClick={() => { setOpenNotifications(false); navigate(item.href); }} className="w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-left transition hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-500/10 dark:hover:bg-amber-500/20"><div className="flex items-center justify-between gap-3"><div className="text-sm font-extrabold text-slate-800 dark:text-white">{item.title}</div><span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-extrabold text-white">{item.count}</span></div><div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.count} {item.message}</div></button>)}
+            {notifications.map((notification) => <button type="button" key={notification.id} onClick={() => void openNotification(notification)} className={["w-full rounded-lg border p-3 text-left transition", notification.readAt ? "border-slate-200/70 bg-white/50 dark:border-white/10 dark:bg-white/5" : "border-mgmp-primary/30 bg-mgmp-primary/5 dark:bg-mgmp-primary/10"].join(" ")}><div className="text-sm font-extrabold text-slate-800 dark:text-white">{notification.title}</div>{notification.message ? <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{notification.message}</div> : null}</button>)}
+            {!reviewQueue.length && !notifications.length ? <div className="py-8 text-center text-sm text-slate-500">Belum ada notifikasi baru.</div> : null}
           </div>
         </DialogContent>
       </Dialog>

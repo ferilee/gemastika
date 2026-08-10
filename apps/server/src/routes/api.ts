@@ -1791,6 +1791,29 @@ export function apiRouter(db: Db) {
     return c.json(await db.select().from(userNotifications).where(eq(userNotifications.recipientKey, recipientKey)).orderBy(desc(userNotifications.createdAt), desc(userNotifications.id)).limit(30));
   });
 
+  api.get("/notifications/review-queue", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+
+    const [pendingMembers, pendingNews, pendingPortfolios, pendingResources, openReports] = await Promise.all([
+      db.select({ id: members.id }).from(members).where(eq(members.membershipStatus, "pending")),
+      db.select({ id: news.id }).from(news).where(eq(news.publishStatus, "pending")),
+      db.select({ id: portfolios.id }).from(portfolios).where(eq(portfolios.publishStatus, "pending")),
+      db.select({ id: learningResources.id }).from(learningResources).where(eq(learningResources.publishStatus, "pending")),
+      db.select({ id: learningResourceReports.id }).from(learningResourceReports).where(eq(learningResourceReports.status, "open"))
+    ]);
+    const queue = [
+      { count: pendingMembers.length, title: "Persetujuan anggota baru", message: "anggota menunggu persetujuan.", href: "/dashboard/pengurus" },
+      { count: pendingNews.length, title: "Review berita", message: "berita menunggu review.", href: "/dashboard/pengurus" },
+      { count: pendingPortfolios.length, title: "Review portofolio", message: "portofolio menunggu review.", href: "/dashboard/pengurus" },
+      { count: pendingResources.length, title: "Review Bank Pembelajaran", message: "materi menunggu review.", href: "/dashboard/pengurus" },
+      { count: openReports.length, title: "Laporan materi", message: "laporan materi perlu ditinjau.", href: "/dashboard/pengurus" }
+    ].filter((item) => item.count > 0);
+    return c.json(queue);
+  });
+
   api.post("/member-activity/visit", async (c) => {
     const env = getEnv();
     const session = await getSession(c, env.sessionSecret);
