@@ -3,7 +3,8 @@ import { Globe, Lightbulb, ListChecks, MessageCircle, Send, Target, Users } from
 import { api } from "@/api/client";
 import type { BoardMember } from "@/types";
 import { formatWA } from "@/lib/mgmp";
-import ketuaMgmpImage from "@/assets/ketuamgmp.png";
+
+const ketuaMgmpImage = "https://s3.gemastika.or.id/gemastika-assets/ketuamgmp.webp";
 
 function contactLinks(contact: string) {
   const raw = (contact || "").trim();
