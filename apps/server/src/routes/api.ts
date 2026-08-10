@@ -29,6 +29,8 @@ import {
 import { getSession } from "../auth/session";
 import { getEnv } from "../env";
 import { checkLearningResourceLink } from "../services/linkAudit";
+import { publishRealtimeEvent, subscribeRealtimeEvents } from "../services/realtimeEvents";
+import { streamSSE } from "hono/streaming";
 
 const ROLE_VALUES = ["admin", "pengurus", "anggota"] as const;
 type RoleValue = (typeof ROLE_VALUES)[number];
@@ -726,6 +728,7 @@ export function apiRouter(db: Db) {
       await db.update(members).set({ roles: csv, role: primary }).where(eq(members.id, id));
       const updated = await db.select().from(members).where(eq(members.id, id)).get();
       if (!updated) return c.json({ error: "Not found" }, 404);
+      publishRealtimeEvent({ kind: "member_approval", recipientKey: updated.email.trim().toLowerCase(), reviewer: true });
       const rolesList = parseRoles(updated.roles || updated.role);
       return c.json({ ...updated, role: primaryRole(rolesList), roles: rolesList });
     }
@@ -833,6 +836,7 @@ export function apiRouter(db: Db) {
 
       const existing = await db.select().from(members).where(eq(members.email, email)).get();
       const shouldAutoApprove = env.adminEmails.includes(email);
+      let createdMember = false;
       if (existing) {
         const mergedRoles = parseRoles(existing.roles || existing.role);
         const primary = primaryRole(mergedRoles);
@@ -853,6 +857,7 @@ export function apiRouter(db: Db) {
           })
           .where(eq(members.id, existing.id));
       } else {
+        createdMember = true;
         const status: MembershipStatus = shouldAutoApprove ? "approved" : "pending";
         await db.insert(members).values({
           name: body.name,
@@ -871,6 +876,7 @@ export function apiRouter(db: Db) {
 
       const updated = await db.select().from(members).where(eq(members.email, email)).get();
       if (!updated) return c.json({ error: "Gagal menyimpan profil" }, 500);
+      if (createdMember && parseMembershipStatus(updated.membershipStatus) === "pending") publishRealtimeEvent({ kind: "member_approval", reviewer: true });
       const roles = parseRoles(updated.roles || updated.role);
       return c.json({ registered: true, member: { ...updated, role: primaryRole(roles), roles } });
     }
@@ -1192,6 +1198,7 @@ export function apiRouter(db: Db) {
         .insert(news)
         .values({ ...body, createdByEmail: email, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
         .returning();
+      publishRealtimeEvent({ kind: "news_review", reviewer: true });
       return c.json(inserted, 201);
     }
   );
@@ -1258,6 +1265,7 @@ export function apiRouter(db: Db) {
         .where(eq(news.id, id));
       const updated = await db.select().from(news).where(eq(news.id, id)).get();
       if (!updated) return c.json({ error: "Not found" }, 404);
+      if (updated.createdByEmail) publishRealtimeEvent({ kind: "news_review", recipientKey: updated.createdByEmail.trim().toLowerCase(), reviewer: true });
       return c.json(updated);
     }
   );
@@ -1343,6 +1351,7 @@ export function apiRouter(db: Db) {
         .insert(portfolios)
         .values({ ...body, createdByEmail: email, publishStatus: "pending", reviewedBy: "", reviewedAt: "" })
         .returning();
+      publishRealtimeEvent({ kind: "portfolio_review", reviewer: true });
       return c.json(inserted, 201);
     }
   );
@@ -1368,6 +1377,7 @@ export function apiRouter(db: Db) {
         .where(eq(portfolios.id, id));
       const updated = await db.select().from(portfolios).where(eq(portfolios.id, id)).get();
       if (!updated) return c.json({ error: "Not found" }, 404);
+      if (updated.createdByEmail) publishRealtimeEvent({ kind: "portfolio_review", recipientKey: updated.createdByEmail.trim().toLowerCase(), reviewer: true });
       return c.json(updated);
     }
   );
@@ -1509,6 +1519,7 @@ export function apiRouter(db: Db) {
       changeNote: changeNote || "Versi awal",
       createdByEmail: email
     });
+    publishRealtimeEvent({ kind: "learning_resource_review", reviewer: true });
     return c.json(inserted, 201);
   });
 
@@ -1564,6 +1575,7 @@ export function apiRouter(db: Db) {
           href: `/bank-pembelajaran/${updated.id}`
         });
       }
+      publishRealtimeEvent({ kind: "learning_resource_review", recipientKey, reviewer: true });
       return c.json(updated);
     }
   );
@@ -1669,6 +1681,7 @@ export function apiRouter(db: Db) {
     const duplicate = await db.select({ id: learningResourceReports.id }).from(learningResourceReports).where(and(eq(learningResourceReports.resourceId, resourceId), eq(learningResourceReports.reporterKey, reporterKey), eq(learningResourceReports.status, "open"))).get();
     if (duplicate) return c.json({ error: "Laporan Anda untuk materi ini masih ditinjau." }, 409);
     const [report] = await db.insert(learningResourceReports).values({ resourceId, reporterKey, ...c.req.valid("json") }).returning();
+    publishRealtimeEvent({ kind: "learning_resource_report", reviewer: true });
     return c.json(report, 201);
   });
 
@@ -1748,6 +1761,25 @@ export function apiRouter(db: Db) {
     const checkedAt = new Date().toISOString();
     await db.update(learningResources).set({ linkCheckedAt: checkedAt, linkCheckStatus: result.status, linkCheckError: result.error || "" }).where(eq(learningResources.id, resource.id));
     return c.json({ ok: result.status === "ok", status: result.httpStatus, error: result.error, checkedAt });
+  });
+
+  api.get("/notifications/stream", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const recipientKey = (session?.email || session?.sub || "").trim().toLowerCase();
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!recipientKey) return c.json({ error: "Unauthorized" }, 401);
+    const reviewer = isReviewer(roles);
+    return streamSSE(c, async (stream) => {
+      await stream.writeSSE({ event: "connected", data: "{}" });
+      const unsubscribe = subscribeRealtimeEvents(async (event) => {
+        if ((event.recipientKey && event.recipientKey === recipientKey) || (event.reviewer && reviewer)) {
+          await stream.writeSSE({ event: "notification", data: JSON.stringify({ kind: event.kind }) }).catch(() => undefined);
+        }
+      });
+      await new Promise<void>((resolve) => c.req.raw.signal.addEventListener("abort", () => resolve(), { once: true }));
+      unsubscribe();
+    });
   });
 
   api.get("/notifications", async (c) => {

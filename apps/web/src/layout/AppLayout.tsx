@@ -1,5 +1,5 @@
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
-import { BookOpen, CalendarDays, Laptop2, Newspaper, Users, User, Shield, AlertCircle, Bell } from "lucide-react";
+import { BookOpen, CalendarDays, Laptop2, Newspaper, Users, User, Shield, AlertCircle, Bell, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Heart, MapPin, Mail, Instagram, Facebook, Youtube } from "lucide-react";
@@ -80,7 +80,7 @@ function BottomItem({
 
 export function AppLayout() {
   const navigate = useNavigate();
-  const { user, profileRegistered, memberStatus } = useAuth();
+  const { user, profileRegistered, memberStatus, refresh } = useAuth();
   const { homeContent } = useAppData();
   const showAdminBottomItem = hasRole(user, "admin");
   const showDashboardNav = hasRole(user, "admin") || hasRole(user, "pengurus");
@@ -88,6 +88,7 @@ export function AppLayout() {
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [openNotifications, setOpenNotifications] = useState(false);
+  const [realtimeTick, setRealtimeTick] = useState(0);
   const [openWelcome, setOpenWelcome] = useState(false);
   const [welcomeActivity, setWelcomeActivity] = useState({ activeDays: 0, totalVisits: 0, activeToday: false });
   const dashboardLink = hasRole(user, "admin")
@@ -176,7 +177,7 @@ export function AppLayout() {
     return () => {
       cancelled = true;
     };
-  }, [showNotifBell, user]);
+  }, [realtimeTick, showNotifBell, user]);
 
   useEffect(() => {
     if (!user) { setNotifications([]); return; }
@@ -192,7 +193,14 @@ export function AppLayout() {
     void load();
     const timer = window.setInterval(() => void load(), 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [user]);
+  }, [realtimeTick, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const source = new EventSource("/api/notifications/stream");
+    source.addEventListener("notification", () => setRealtimeTick((value) => value + 1));
+    return () => source.close();
+  }, [user?.email, user?.sub]);
 
   async function openNotification(notification: UserNotification) {
     if (!notification.readAt) {
@@ -209,6 +217,15 @@ export function AppLayout() {
       await api("/api/profile/me/badge-ack", { method: "POST" });
     } catch {
       // ignore
+    }
+  }
+
+  async function signOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", headers: { "content-type": "application/json" } });
+    } finally {
+      await refresh();
+      navigate("/", { replace: true });
     }
   }
 
@@ -267,6 +284,7 @@ export function AppLayout() {
                 ) : null}
               </button>
             ) : null}
+            {user ? <button type="button" onClick={() => void signOut()} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/70 bg-white/70 text-slate-600 hover:border-rose-300 hover:text-rose-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-rose-400/40 dark:hover:text-rose-300" title="Keluar" aria-label="Keluar"><LogOut className="h-4 w-4" /></button> : null}
             <InstallAppButton />
             <ThemeToggle />
           </nav>
@@ -293,6 +311,7 @@ export function AppLayout() {
                 ) : null}
               </button>
             ) : null}
+            {user ? <button type="button" onClick={() => void signOut()} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/70 bg-white/70 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200" title="Keluar" aria-label="Keluar"><LogOut className="h-4 w-4" /></button> : null}
             <InstallAppButton />
             <ThemeToggle />
           </div>

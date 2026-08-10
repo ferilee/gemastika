@@ -22,7 +22,7 @@ export function RequireRole({ role, children }: { role: MemberRole; children: Re
   if (!profileRegistered) return <Navigate to="/" replace state={{ from: loc.pathname }} />;
   if (!isApprovedMember) return <Navigate to="/" replace state={{ from: loc.pathname }} />;
   if (!hasRole(user, role)) {
-    if (!(role === "pengurus" && hasRole(user, "admin"))) return <Navigate to="/dashboard" replace />;
+    if (!(role === "pengurus" && hasRole(user, "admin"))) return <Navigate to="/" replace />;
   }
   return <>{children}</>;
 }

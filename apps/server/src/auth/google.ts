@@ -12,7 +12,7 @@ type Env = {
   googleRedirectUri: string;
   sessionSecret: string;
   adminEmails: string[];
-  // Optional; when provided we can merge roles from DB.
+  // Optional; when provided it is the authoritative source for roles.
   db?: Db;
 };
 
@@ -51,21 +51,20 @@ export function googleAuthRouter(env: Env) {
     if (!row) return c.json({ user });
 
     const mergedRoles = new Set<"admin" | "pengurus" | "anggota">();
-    for (const role of user.roles || (user.role ? [user.role] : [])) {
-      if (role === "admin" || role === "pengurus" || role === "anggota") mergedRoles.add(role);
-    }
     if (row.role === "admin" || row.role === "pengurus" || row.role === "anggota") mergedRoles.add(row.role);
     if (row.roles) {
       for (const role of row.roles.split(",").map((v) => v.trim())) {
         if (role === "admin" || role === "pengurus" || role === "anggota") mergedRoles.add(role);
       }
     }
+    if (env.adminEmails.includes(email)) mergedRoles.add("admin");
 
     const membershipStatus =
       row.membershipStatus === "approved" || row.membershipStatus === "pending" || row.membershipStatus === "rejected"
         ? row.membershipStatus
         : "approved";
-    const isGuest = membershipStatus !== "approved" && !mergedRoles.has("admin") && !mergedRoles.has("pengurus");
+    const effectiveMembershipStatus = env.adminEmails.includes(email) ? "approved" : membershipStatus;
+    const isGuest = effectiveMembershipStatus !== "approved" && !mergedRoles.has("admin") && !mergedRoles.has("pengurus");
     const roles = isGuest ? [] : Array.from(mergedRoles);
     const role: "admin" | "pengurus" | "anggota" = mergedRoles.has("admin")
       ? "admin"
@@ -73,7 +72,7 @@ export function googleAuthRouter(env: Env) {
         ? "pengurus"
         : "anggota";
 
-    const merged = { ...user, role, roles, membershipStatus, isGuest };
+    const merged = { ...user, role, roles, membershipStatus: effectiveMembershipStatus, isGuest };
     await setSession(c, merged, { secret: env.sessionSecret, secure: isHttps(env.webOrigin) });
     return c.json({ user: merged });
   });

@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { Hono } from "hono";
 import path from "node:path";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { eq } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { ensureRuntimeSchema } from "../db/ensure";
 import { apiRouter } from "./api";
 import { setSession } from "../auth/session";
+import { googleAuthRouter } from "../auth/google";
 import { agendas, learningResources, members, news, portfolios } from "../db/schema";
 
 type LoginKind = "admin" | "pengurus" | "anggota" | "guest";
@@ -127,8 +129,9 @@ async function buildTestApp() {
     return c.json({ ok: true });
   });
   app.route("/", apiRouter(db));
+  app.route("/", googleAuthRouter({ webOrigin: "http://localhost:5173", googleClientId: "", googleClientSecret: "", googleRedirectUri: "", sessionSecret: "test-secret", adminEmails: ["admin@test.local"], db }));
 
-  return { app, seed: { agenda, newsRow, portfolio, learningResource } };
+  return { app, db, seed: { agenda, newsRow, portfolio, learningResource } };
 }
 
 async function getCookie(app: Hono, kind: LoginKind) {
@@ -139,11 +142,13 @@ async function getCookie(app: Hono, kind: LoginKind) {
 
 describe("api endpoints", () => {
   let app: Hono;
+  let db: Awaited<ReturnType<typeof buildTestApp>>["db"];
   let seed: Awaited<ReturnType<typeof buildTestApp>>["seed"];
 
   beforeEach(async () => {
     const ctx = await buildTestApp();
     app = ctx.app;
+    db = ctx.db;
     seed = ctx.seed;
   });
 
@@ -153,6 +158,16 @@ describe("api endpoints", () => {
     expect(membersRes.status).toBe(200);
     const byIdRes = await app.request("http://local/api/members/1");
     expect(byIdRes.status).toBe(200);
+  });
+
+  it("refreshes session roles from the database", async () => {
+    const pengurusCookie = await getCookie(app, "pengurus");
+    await db.update(members).set({ role: "anggota", roles: "anggota" }).where(eq(members.email, "pengurus@test.local"));
+    const response = await app.request("http://local/api/auth/me", { headers: { cookie: pengurusCookie } });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { user: { roles: string[]; role: string } };
+    expect(payload.user.role).toBe("anggota");
+    expect(payload.user.roles).toEqual(["anggota"]);
   });
 
   it("upload endpoint auth guard", async () => {
