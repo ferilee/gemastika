@@ -29,6 +29,7 @@ import {
 import { getSession } from "../auth/session";
 import { getEnv } from "../env";
 import { checkLearningResourceLink } from "../services/linkAudit";
+import { getErrorMessage } from "../services/errorMessage";
 import { publishRealtimeEvent, subscribeRealtimeEvents } from "../services/realtimeEvents";
 import { streamSSE } from "hono/streaming";
 
@@ -343,8 +344,8 @@ export function apiRouter(db: Db) {
         new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timeout ke RustFS.")), RUSTFS_UPLOAD_TIMEOUT_MS))
       ]);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Gagal upload ke RustFS.";
-      console.error("upload_image_error:", message);
+      const message = getErrorMessage(err, "Gagal upload ke RustFS.");
+      console.error("upload_image_error:", err);
       return c.json({ error: message }, 502);
     }
 
@@ -390,8 +391,8 @@ export function apiRouter(db: Db) {
         new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timeout ke RustFS.")), RUSTFS_UPLOAD_TIMEOUT_MS))
       ]);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Gagal upload materi ke RustFS.";
-      console.error("upload_resource_error:", message);
+      const message = getErrorMessage(err, "Gagal upload materi ke RustFS.");
+      console.error("upload_resource_error:", err);
       return c.json({ error: message }, 502);
     }
 

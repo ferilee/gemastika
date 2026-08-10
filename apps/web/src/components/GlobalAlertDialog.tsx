@@ -3,6 +3,22 @@ import { AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
+function alertMessage(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.message;
+  if (value && typeof value === "object") {
+    const record = value as { message?: unknown; error?: unknown; detail?: unknown };
+    for (const candidate of [record.message, record.error, record.detail]) {
+      if (typeof candidate === "string" && candidate.trim()) return candidate;
+      if (candidate && typeof candidate === "object") {
+        const nested = alertMessage(candidate);
+        if (nested) return nested;
+      }
+    }
+  }
+  return "Terjadi kesalahan. Silakan coba lagi.";
+}
+
 export function GlobalAlertDialog() {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -11,8 +27,7 @@ export function GlobalAlertDialog() {
     const originalAlert = window.alert.bind(window);
 
     window.alert = (msg?: unknown) => {
-      const text = typeof msg === "string" ? msg : String(msg ?? "");
-      setMessage(text);
+      setMessage(alertMessage(msg));
       setOpen(true);
     };
 
