@@ -21,7 +21,7 @@ import { agendaBlock, isPast } from "@/lib/mgmp";
 import { MathHero3D } from "@/components/MathHero3D";
 import { api } from "@/api/client";
 import { useEffect, useState } from "react";
-import type { Member } from "@/types";
+import type { LearningResource, Member } from "@/types";
 
 type ProfileStatus = {
   registered: boolean;
@@ -41,6 +41,7 @@ export function HomePage() {
   const [profileTelegram, setProfileTelegram] = useState("");
   const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
   const [profileWebsiteUrl, setProfileWebsiteUrl] = useState("");
+  const [featuredResources, setFeaturedResources] = useState<LearningResource[]>([]);
 
   const upcomingAgenda = (() => {
     const next = agendas.find((a) => !isPast(a.date));
@@ -55,8 +56,9 @@ export function HomePage() {
   }, null as (typeof members)[number] | null);
   const topMembers = [...members].sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 5);
 
-  function isExternalHref(href: string) {
-    return /^https?:\/\//i.test(href);
+  function resourcePermalink(resource: LearningResource) {
+    const slug = resource.title.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+    return `/bank-pembelajaran/${resource.id}-${slug || "materi"}`;
   }
 
   useEffect(() => {
@@ -81,6 +83,14 @@ export function HomePage() {
       cancelled = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api<LearningResource[]>("/api/learning-resources/featured")
+      .then((resources) => { if (!cancelled) setFeaturedResources(resources); })
+      .catch(() => { if (!cancelled) setFeaturedResources([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!profileData) return;
@@ -351,7 +361,7 @@ export function HomePage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {homeContent.quickLinks.map((item, index) => {
+            {featuredResources.length ? featuredResources.map((item, index) => {
               const commonClassName =
                 "relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white/60 shadow-sm backdrop-blur-sm transition hover:shadow-md dark:border-white/10 dark:bg-white/5";
               const iconClassName =
@@ -367,24 +377,17 @@ export function HomePage() {
                     <div className={iconClassName}>{index % 2 === 0 ? <FileText className="h-5 w-5" /> : <Link2 className="h-5 w-5" />}</div>
                     <div className="min-w-0">
                       <div className="text-sm font-extrabold text-slate-800 dark:text-slate-100">{item.title}</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{item.subtitle}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{item.category} • {item.topic}</div>
                     </div>
                   </div>
                 </>
               );
-              if (isExternalHref(item.href)) {
-                return (
-                  <a key={item.id} className={commonClassName} href={item.href} target="_blank" rel="noreferrer">
-                    {inner}
-                  </a>
-                );
-              }
               return (
-                <Link key={item.id} className={commonClassName} to={item.href || "/"}>
+                <Link key={item.id} className={commonClassName} to={resourcePermalink(item)}>
                   {inner}
                 </Link>
               );
-            })}
+            }) : <Link to="/bank-pembelajaran" className="sm:col-span-2 rounded-2xl border border-slate-200/70 bg-white/60 p-4 text-sm font-semibold text-slate-600 transition hover:text-mgmp-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-300">Jelajahi Bank Pembelajaran untuk menemukan materi yang tersedia.</Link>}
           </CardContent>
         </Card>
 

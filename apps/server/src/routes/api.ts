@@ -174,6 +174,21 @@ function isReviewer(roles: RoleValue[]) {
   return roles.includes("admin") || roles.includes("pengurus");
 }
 
+function dailySeed(value: string) {
+  return [...value].reduce((seed, char) => ((seed * 31) + char.charCodeAt(0)) >>> 0, 7);
+}
+
+function shuffleForDay<T>(items: T[], day: string) {
+  const shuffled = [...items];
+  let seed = dailySeed(day);
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
+    const swapIndex = seed % (index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
 function filterFallbackSchools(query: string) {
   return rankSchools(SCHOOL_FALLBACK, query);
 }
@@ -1439,6 +1454,39 @@ export function apiRouter(db: Db) {
       )
       .orderBy(desc(learningResources.createdAt), desc(learningResources.id));
     return c.json(rows);
+  });
+
+  api.get("/learning-resources/featured", async (c) => {
+    const [resources, ratings] = await Promise.all([
+      db.select().from(learningResources).where(and(eq(learningResources.publishStatus, "approved"), eq(learningResources.archivedAt, ""))),
+      db.select().from(learningResourceRatings)
+    ]);
+    const ratingByResource = new Map<number, { total: number; count: number }>();
+    for (const rating of ratings) {
+      const current = ratingByResource.get(rating.resourceId) || { total: 0, count: 0 };
+      current.total += rating.rating;
+      current.count += 1;
+      ratingByResource.set(rating.resourceId, current);
+    }
+    const candidatePool = resources
+      .filter((item) => item.linkCheckStatus !== "broken")
+      .map((item) => {
+        const rating = ratingByResource.get(item.id) || { total: 0, count: 0 };
+        const averageRating = rating.count ? rating.total / rating.count : 0;
+        const ageDays = Math.max(0, Math.floor((Date.now() - new Date(item.createdAt).getTime()) / 86_400_000));
+        const quality = (item.downloadCount * 5) + item.viewCount + (averageRating * 20) + (rating.count * 3) + Math.max(0, 30 - ageDays);
+        return { item, quality };
+      })
+      .sort((a, b) => b.quality - a.quality || b.item.id - a.item.id)
+      .slice(0, 12)
+      .map((row) => row.item);
+    const shuffled = shuffleForDay(candidatePool, new Date().toISOString().slice(0, 10));
+    const featured = shuffled.slice(0, 2);
+    if (featured.length === 2 && featured[0].category === featured[1].category) {
+      const differentCategory = shuffled.slice(2).find((item) => item.category !== featured[0].category);
+      if (differentCategory) featured[1] = differentCategory;
+    }
+    return c.json(featured);
   });
 
   api.get("/admin/learning-resources/operations", async (c) => {

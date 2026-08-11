@@ -398,6 +398,9 @@ describe("api endpoints", () => {
 
   it("learning resource endpoints", async () => {
     expect((await app.request("http://local/api/learning-resources")).status).toBe(200);
+    const featuredRes = await app.request("http://local/api/learning-resources/featured");
+    expect(featuredRes.status).toBe(200);
+    expect(((await featuredRes.json()) as Array<{ publishStatus: string }>).every((item) => item.publishStatus === "approved")).toBe(true);
     expect((await app.request(`http://local/api/learning-resources/${seed.learningResource.id}`)).status).toBe(200);
     expect((await app.request("http://local/api/admin/learning-resources/operations")).status).toBe(403);
     const initialAdminCookie = await getCookie(app, "admin");
