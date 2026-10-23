@@ -14,6 +14,23 @@ import { DashboardAdminPage } from "@/pages/DashboardAdminPage";
 import { DashboardPengurusPage } from "@/pages/DashboardPengurusPage";
 import { DashboardAnggotaPage } from "@/pages/DashboardAnggotaPage";
 import { RequireAuth, RequireRole } from "@/components/RouteGuards";
+import { hasRole, useAuth } from "@/state/AuthContext";
+
+function RootPage() {
+  const { user, profileRegistered, isApprovedMember, loading } = useAuth();
+  const isMemberHome = Boolean(
+    !loading &&
+      user &&
+      profileRegistered &&
+      isApprovedMember &&
+      hasRole(user, "anggota") &&
+      !hasRole(user, "admin") &&
+      !hasRole(user, "pengurus")
+  );
+
+  if (loading) return <div className="min-h-[70vh] animate-pulse rounded-[2rem] bg-slate-100 dark:bg-white/5" />;
+  return isMemberHome ? <DashboardAnggotaPage /> : <HomePage />;
+}
 
 export default function App() {
   return (
@@ -22,7 +39,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route element={<AppLayout />}>
-              <Route path="/" element={<HomePage />} />
+              <Route path="/" element={<RootPage />} />
               <Route path="/profil" element={<ProfilPage />} />
               <Route path="/anggota" element={<AnggotaPage />} />
               <Route path="/kegiatan" element={<KegiatanPage />} />
@@ -58,11 +75,7 @@ export default function App() {
               />
               <Route
                 path="/dashboard/anggota"
-                element={
-                  <RequireAuth>
-                    <DashboardAnggotaPage />
-                  </RequireAuth>
-                }
+                element={<Navigate to="/" replace />}
               />
 
               <Route path="*" element={<Navigate to="/" replace />} />

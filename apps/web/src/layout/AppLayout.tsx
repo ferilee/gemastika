@@ -1,4 +1,4 @@
-import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, Link, useLocation, useNavigate } from "react-router-dom";
 import { BookOpen, CalendarDays, Laptop2, Newspaper, Users, User, Shield, AlertCircle, Bell, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -81,11 +81,23 @@ function BottomItem({
 }
 
 export function AppLayout() {
+  const location = useLocation();
   const navigate = useNavigate();
-  const { user, profileRegistered, memberStatus, refresh } = useAuth();
+  const { user, profileRegistered, memberStatus, loading, refresh } = useAuth();
   const { homeContent } = useAppData();
   const showAdminBottomItem = hasRole(user, "admin");
   const showDashboardNav = hasRole(user, "admin") || hasRole(user, "pengurus") || hasRole(user, "anggota");
+  const isMemberHome = location.pathname === "/" && (
+    loading ||
+    Boolean(
+      user &&
+      profileRegistered &&
+      memberStatus === "approved" &&
+      hasRole(user, "anggota") &&
+      !hasRole(user, "admin") &&
+      !hasRole(user, "pengurus")
+    )
+  );
   const isReviewer = hasRole(user, "admin") || hasRole(user, "pengurus");
   const showNotifBell = Boolean(user);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
@@ -232,14 +244,14 @@ export function AppLayout() {
   const notificationCount = pendingApprovalCount + unreadNotificationCount;
 
   return (
-    <div className="min-h-screen pb-20 md:pb-0 bg-mgmp-surface text-slate-800 dark:bg-[#0b1220] dark:text-slate-200">
+    <div className={["min-h-screen text-slate-800 dark:bg-[#0b1220] dark:text-slate-200", isMemberHome ? "bg-mgmp-surface" : "bg-mgmp-surface pb-20 md:pb-0"].join(" ")}>
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 hidden dark:block">
         <div className="absolute -top-44 left-1/2 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(29,78,216,0.35),transparent_60%)] blur-3xl" />
         <div className="absolute top-28 right-[-220px] h-[520px] w-[520px] rounded-full bg-[radial-gradient(circle_at_center,rgba(245,158,11,0.22),transparent_60%)] blur-3xl" />
         <div className="absolute bottom-[-240px] left-[-220px] h-[560px] w-[560px] rounded-full bg-[radial-gradient(circle_at_center,rgba(56,189,248,0.12),transparent_60%)] blur-3xl" />
       </div>
 
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 dark:border-white/10 bg-white/70 dark:bg-gradient-to-b dark:from-[#0b1220]/95 dark:to-[#0b1220]/70 backdrop-blur">
+      {!isMemberHome ? <header className="sticky top-0 z-40 border-b border-slate-200/70 dark:border-white/10 bg-white/70 dark:bg-gradient-to-b dark:from-[#0b1220]/95 dark:to-[#0b1220]/70 backdrop-blur">
         <div className="container h-16 flex items-center justify-between gap-4">
           <Link to="/" className="flex items-center gap-3">
             <img
@@ -315,9 +327,9 @@ export function AppLayout() {
             <ThemeToggle />
           </div>
         </div>
-      </header>
+      </header> : null}
 
-      <nav className="fixed bottom-0 left-0 z-40 w-full h-16 md:hidden border-t border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#0b1220]/80 backdrop-blur">
+      {!isMemberHome ? <nav className="fixed bottom-0 left-0 z-40 w-full h-16 md:hidden border-t border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#0b1220]/80 backdrop-blur">
         <div className={["grid h-full text-[10px] font-extrabold", showAdminBottomItem ? "grid-cols-7" : "grid-cols-6"].join(" ")}>
           <BottomItem to="/" label="Beranda" Icon={CalendarDays} />
           <BottomItem to="/profil" label="Profil" Icon={User} />
@@ -327,10 +339,10 @@ export function AppLayout() {
           <BottomItem to="/bank-pembelajaran" label="Bank" Icon={BookOpen} />
           {showAdminBottomItem ? <BottomItem to="/dashboard/admin" label="Admin" Icon={Shield} /> : null}
         </div>
-      </nav>
+      </nav> : null}
 
-      <main className="container pt-10 pb-16">
-        {user && memberStatus !== "approved" ? (
+      <main className={isMemberHome ? "min-h-screen px-3 py-3 sm:px-6 sm:py-6 lg:px-8" : "container pt-10 pb-16"}>
+        {!isMemberHome && user && memberStatus !== "approved" ? (
           <div className="mb-4 rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
             Akun Anda sedang dalam mode tamu ({memberStatus}). Menunggu persetujuan admin untuk akses penuh anggota.
           </div>
