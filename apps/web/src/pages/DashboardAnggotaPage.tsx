@@ -4,26 +4,30 @@ import {
   ArrowRight,
   BookOpen,
   CalendarDays,
+  Check,
   CheckCircle2,
+  Clock3,
   Laptop2,
   MapPin,
   Newspaper,
+  Sparkles,
   Trophy,
-  User
+  User,
+  X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAppData } from "@/state/AppDataContext";
 import { useAuth } from "@/state/AuthContext";
 import { isPast } from "@/lib/mgmp";
 
 const STEPS = [
-  { title: "Profil", description: "Pastikan data keanggotaan Anda lengkap.", Icon: User },
-  { title: "Kegiatan", description: "Ikuti agenda dan catat kehadiran Anda.", Icon: CalendarDays },
-  { title: "Kontribusi", description: "Bagikan karya dan informasi pembelajaran.", Icon: Laptop2 },
-  { title: "Progres", description: "Lihat XP dan perkembangan keanggotaan Anda.", Icon: Trophy }
+  { title: "Profil", shortTitle: "Profil", description: "Data keanggotaan", Icon: User },
+  { title: "Kegiatan", shortTitle: "Agenda", description: "Agenda dan hadir", Icon: CalendarDays },
+  { title: "Kontribusi", shortTitle: "Karya", description: "Karya dan berbagi", Icon: Laptop2 },
+  { title: "Progres", shortTitle: "Progres", description: "XP dan peringkat", Icon: Trophy }
 ] as const;
 
 function formatDate(value: string) {
@@ -38,18 +42,58 @@ function membershipLabel(status: string, registered: boolean) {
   return "Keanggotaan ditolak";
 }
 
+function WizardChoice({
+  Icon,
+  title,
+  description,
+  meta,
+  active = false,
+  to,
+  onClick
+}: {
+  Icon: LucideIcon;
+  title: string;
+  description: string;
+  meta?: string;
+  active?: boolean;
+  to?: string;
+  onClick?: () => void;
+}) {
+  const className = [
+    "group relative flex min-h-[142px] flex-col justify-between rounded-2xl border p-4 text-left transition-all",
+    active
+      ? "border-mgmp-primary bg-blue-50 shadow-[0_10px_24px_-16px_rgba(29,78,216,0.75)] dark:border-blue-400 dark:bg-blue-500/10"
+      : "border-slate-200 bg-white/75 hover:-translate-y-0.5 hover:border-mgmp-primary/50 hover:shadow-lg dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-blue-400/50"
+  ].join(" ");
+  const content = (
+    <>
+      <div className="flex items-start justify-between gap-3">
+        <span className={["inline-flex h-11 w-11 items-center justify-center rounded-xl", active ? "bg-mgmp-primary text-white" : "bg-slate-100 text-mgmp-primary dark:bg-white/10 dark:text-blue-300"].join(" ")}>
+          <Icon className="h-5 w-5" />
+        </span>
+        {active ? <CheckCircle2 className="h-5 w-5 text-mgmp-primary" /> : <ArrowRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-1 dark:text-slate-500" />}
+      </div>
+      <div className="mt-4">
+        <div className="font-extrabold text-slate-800 dark:text-white">{title}</div>
+        <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</div>
+        {meta ? <div className="mt-3 text-[11px] font-extrabold text-mgmp-primary dark:text-blue-300">{meta}</div> : null}
+      </div>
+    </>
+  );
+
+  return to ? <Link to={to} className={className}>{content}</Link> : <button type="button" onClick={onClick} className={className}>{content}</button>;
+}
+
 export function DashboardAnggotaPage() {
   const { user, profileRegistered, memberStatus } = useAuth();
   const { members, agendas, news, portfolios } = useAppData();
   const [currentStep, setCurrentStep] = useState(0);
   const storageKey = `mgmp-dashboard-step:${user?.email || user?.sub || "guest"}`;
 
-  const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
-  const currentMember = useMemo(() => {
-    const email = (user?.email || "").trim().toLowerCase();
-    return members.find((member) => email && member.email.trim().toLowerCase() === email) || null;
-  }, [members, user?.email]);
   const memberEmail = (user?.email || "").trim().toLowerCase();
+  const currentMember = useMemo(() => {
+    return members.find((member) => memberEmail && member.email.trim().toLowerCase() === memberEmail) || null;
+  }, [memberEmail, members]);
   const myPortfolios = portfolios.filter((item) => item.createdByEmail.trim().toLowerCase() === memberEmail);
   const myNews = news.filter((item) => item.createdByEmail.trim().toLowerCase() === memberEmail);
   const nextAgenda = useMemo(
@@ -61,8 +105,11 @@ export function DashboardAnggotaPage() {
     if (!currentMember) return 0;
     return [...members].sort((a, b) => (b.xp || 0) - (a.xp || 0)).findIndex((member) => member.id === currentMember.id) + 1;
   }, [currentMember, members]);
-  const step = STEPS[currentStep];
-  const StepIcon = step.Icon;
+  const activeStep = STEPS[currentStep] ?? STEPS[0];
+  const totalContributions = myPortfolios.length + myNews.length;
+  const knowledgeNote = totalContributions > 0
+    ? `Anda sudah membagikan ${totalContributions} kontribusi. Terima kasih sudah menghidupkan ruang berbagi MGMP.`
+    : "Satu karya atau berita yang Anda bagikan dapat membantu anggota lain belajar lebih cepat.";
 
   useEffect(() => {
     try {
@@ -91,151 +138,160 @@ export function DashboardAnggotaPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="text-sm font-extrabold uppercase tracking-widest text-mgmp-primary">Perjalanan Anggota</div>
-          <h1 className="mt-2 text-2xl font-extrabold text-mgmp-blue dark:text-white">Halo, {user?.name || user?.email || "Anggota"}</h1>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Ikuti langkah singkat untuk melihat aktivitas dan progres Anda.</p>
-        </div>
-        <Badge variant={memberStatus === "approved" ? "success" : "default"}>{membershipLabel(memberStatus, profileRegistered)}</Badge>
+      <div>
+        <div className="text-xs font-extrabold uppercase tracking-[0.22em] text-mgmp-primary">Dashboard anggota</div>
+        <h1 className="mt-2 text-2xl font-extrabold text-mgmp-blue dark:text-white">Ruang perjalanan Anda</h1>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Ikuti langkahnya untuk melihat aktivitas, kontribusi, dan perkembangan keanggotaan.</p>
       </div>
 
-      <Card className="overflow-hidden">
-        <CardContent className="p-4 md:p-6">
-          <div className="flex items-center justify-between gap-2">
-            {STEPS.map((item, index) => {
-              const Icon = item.Icon;
-              const completed = index < currentStep;
-              const active = index === currentStep;
-              return (
-                <div key={item.title} className="flex flex-1 items-center gap-2 last:flex-none">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(index)}
-                    className="group flex min-w-0 items-center gap-2 text-left"
-                    aria-current={active ? "step" : undefined}
-                  >
-                    <span
-                      className={[
-                        "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-sm font-extrabold transition",
-                        active
-                          ? "border-mgmp-primary bg-mgmp-primary text-white"
-                          : completed
-                            ? "border-emerald-500 bg-emerald-500 text-white"
-                            : "border-slate-300 bg-slate-100 text-slate-500 dark:border-white/15 dark:bg-white/5 dark:text-slate-400"
-                      ].join(" ")}
-                    >
-                      {completed ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+      <section className="relative overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white/90 shadow-[0_22px_70px_-36px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-[#0b1220]/80 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_28px_80px_-38px_rgba(29,78,216,0.55)]">
+        <div aria-hidden className="pointer-events-none absolute inset-0 opacity-70 dark:opacity-100">
+          <div className="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-blue-100/60 blur-3xl dark:bg-blue-500/10" />
+          <div className="absolute -bottom-48 left-1/3 h-96 w-96 rounded-full bg-amber-100/50 blur-3xl dark:bg-amber-500/10" />
+        </div>
+
+        <div className="relative grid min-h-[650px] lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="border-b border-slate-200/80 bg-slate-50/70 p-5 dark:border-white/10 dark:bg-[#080e1a]/60 lg:border-b-0 lg:border-r lg:p-7">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                {user?.picture ? (
+                  <img src={user.picture} alt="" className="h-10 w-10 rounded-full border-2 border-white object-cover shadow-sm dark:border-white/10" />
+                ) : (
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-mgmp-primary text-sm font-extrabold text-white">{(user?.name || user?.email || "A").slice(0, 1).toUpperCase()}</span>
+                )}
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-extrabold text-slate-800 dark:text-white">{user?.name || "Anggota MGMP"}</div>
+                  <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">{user?.email || "-"}</div>
+                </div>
+              </div>
+              <Link to="/dashboard" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-white hover:text-mgmp-primary dark:hover:bg-white/10" aria-label="Tutup dashboard anggota" title="Kembali ke dashboard">
+                <X className="h-5 w-5" />
+              </Link>
+            </div>
+
+            <div className="mt-8 hidden lg:block">
+              <div className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Perjalanan anggota</div>
+              <div className="mt-2 text-xl font-extrabold text-slate-800 dark:text-white">Satu langkah pada satu waktu.</div>
+              <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">Kenali ruang Anda di MGMP dan temukan cara untuk ikut berkontribusi.</p>
+            </div>
+
+            <nav className="relative mt-6 grid grid-cols-4 gap-2 lg:mt-10 lg:block lg:space-y-2" aria-label="Langkah dashboard anggota">
+              <div aria-hidden className="absolute left-5 top-7 hidden h-[calc(100%-3.5rem)] w-px bg-slate-200 dark:bg-white/10 lg:block" />
+              {STEPS.map((item, index) => {
+                const completed = index < currentStep;
+                const active = index === currentStep;
+                const Icon = item.Icon;
+                return (
+                  <button key={item.title} type="button" onClick={() => setCurrentStep(index)} className="group relative z-10 flex w-full flex-col items-center gap-2 text-center lg:flex-row lg:gap-3 lg:rounded-xl lg:p-2 lg:text-left" aria-current={active ? "step" : undefined}>
+                    <span className={["inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-4 border-slate-50 text-xs font-extrabold transition dark:border-[#080e1a]", active ? "bg-mgmp-primary text-white shadow-[0_0_0_4px_rgba(29,78,216,0.15)]" : completed ? "bg-emerald-500 text-white" : "bg-white text-slate-400 dark:bg-slate-800 dark:text-slate-400"].join(" ")}>
+                      {completed ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                     </span>
-                    <span className="hidden min-w-0 sm:block">
-                      <span className={active ? "block truncate text-sm font-extrabold text-mgmp-primary" : "block truncate text-sm font-bold text-slate-600 dark:text-slate-300"}>{item.title}</span>
-                      <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">Langkah {index + 1}</span>
+                    <span className="min-w-0 lg:block">
+                      <span className={["block truncate text-[11px] font-extrabold sm:text-xs lg:text-sm", active ? "text-mgmp-primary dark:text-blue-300" : "text-slate-500 dark:text-slate-400"].join(" ")}>{item.title}</span>
+                      <span className="hidden text-[11px] text-slate-400 lg:block dark:text-slate-500">{item.description}</span>
                     </span>
                   </button>
-                  {index < STEPS.length - 1 ? <span className={completed ? "mx-1 h-px flex-1 bg-emerald-400" : "mx-1 h-px flex-1 bg-slate-200 dark:bg-white/10"} /> : null}
+                );
+              })}
+            </nav>
+
+            <div className="mt-8 hidden rounded-2xl border border-blue-100 bg-blue-50/80 p-4 dark:border-blue-400/20 dark:bg-blue-500/10 lg:block">
+              <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-mgmp-primary dark:text-blue-300">Tahukah Anda?</div>
+              <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">{knowledgeNote}</p>
+              <Link to="/bank-pembelajaran" className="mt-3 inline-flex items-center gap-1 text-xs font-extrabold text-mgmp-primary hover:underline dark:text-blue-300">Jelajahi Bank Pembelajaran <ArrowRight className="h-3.5 w-3.5" /></Link>
+            </div>
+          </aside>
+
+          <div className="flex min-w-0 flex-col p-5 sm:p-7 lg:p-10">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-extrabold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Langkah {currentStep + 1} dari {STEPS.length}</div>
+                <h2 className="mt-3 max-w-2xl text-2xl font-extrabold leading-tight text-slate-900 dark:text-white sm:text-3xl">{currentStep === 0 ? "Bagaimana status profil keanggotaan Anda?" : null}{currentStep === 1 ? "Kegiatan apa yang ingin Anda lihat lebih dulu?" : null}{currentStep === 2 ? "Bagaimana Anda ingin berkontribusi?" : null}{currentStep === 3 ? "Bagaimana progres Anda saat ini?" : null}</h2>
+                <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">{activeStep.description}. Pilih kartu untuk membuka halaman terkait.</p>
+              </div>
+              <Badge variant={memberStatus === "approved" ? "success" : "default"} className="hidden shrink-0 sm:inline-flex">{membershipLabel(memberStatus, profileRegistered)}</Badge>
+            </div>
+
+            <div className="mt-8 flex-1">
+              {currentStep === 0 ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <WizardChoice
+                    Icon={profileRegistered ? CheckCircle2 : User}
+                    title={profileRegistered ? "Profil sudah terdaftar" : "Lengkapi profil anggota"}
+                    description={currentMember?.school || "Isi informasi sekolah dan data kontak agar profil Anda siap digunakan."}
+                    meta={membershipLabel(memberStatus, profileRegistered)}
+                    active={profileRegistered}
+                    to="/profil"
+                  />
+                  <WizardChoice
+                    Icon={User}
+                    title="Lihat identitas publik"
+                    description="Periksa bagaimana nama dan sekolah Anda ditampilkan di daftar anggota MGMP."
+                    meta={currentMember?.name || user?.name || "Anggota MGMP"}
+                    to="/anggota"
+                  />
                 </div>
-              );
-            })}
-          </div>
-          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
-            <div className="h-full rounded-full bg-mgmp-primary transition-all" style={{ width: `${((currentStep + 1) / STEPS.length) * 100}%` }} />
-          </div>
-        </CardContent>
-      </Card>
+              ) : null}
 
-      <Card className="min-h-[330px]">
-        <CardHeader className="flex-row items-start justify-between gap-4">
-          <div>
-            <div className="text-xs font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">Langkah {currentStep + 1} dari {STEPS.length}</div>
-            <CardTitle className="mt-2 inline-flex items-center gap-2 text-mgmp-blue dark:text-white"><StepIcon className="h-5 w-5 text-mgmp-primary" /> {step.title}</CardTitle>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{step.description}</p>
-          </div>
-          <Badge variant="primary">{currentStep + 1}/{STEPS.length}</Badge>
-        </CardHeader>
-
-        <CardContent>
-          {currentStep === 0 ? (
-            <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
-              <div className="rounded-2xl border border-slate-200/70 bg-white/60 p-4 dark:border-white/10 dark:bg-white/5">
-                <div className="text-lg font-extrabold text-slate-800 dark:text-white">{currentMember?.name || user?.name || "Profil anggota"}</div>
-                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">{currentMember?.school || "Lengkapi profil agar informasi anggota tercatat."}</div>
-                <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                  <div><span className="text-slate-500 dark:text-slate-400">Email</span><div className="font-bold text-slate-700 dark:text-slate-200">{user?.email || "-"}</div></div>
-                  <div><span className="text-slate-500 dark:text-slate-400">Role</span><div className="font-bold capitalize text-slate-700 dark:text-slate-200">{roles.join(", ") || "anggota"}</div></div>
+              {currentStep === 1 ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <WizardChoice
+                    Icon={CalendarDays}
+                    title={nextAgenda?.title || "Belum ada agenda mendatang"}
+                    description={nextAgenda ? `${formatDate(nextAgenda.date)}${nextAgenda.time ? ` · ${nextAgenda.time}` : ""}` : "Lihat seluruh agenda dan kegiatan yang telah selesai."}
+                    meta={nextAgenda ? `${nextAgenda.location || "Lokasi belum diatur"}` : `${finishedAgendaCount} kegiatan selesai`}
+                    active={Boolean(nextAgenda)}
+                    to="/kegiatan"
+                  />
+                  <WizardChoice
+                    Icon={CheckCircle2}
+                    title="Riwayat kegiatan"
+                    description="Buka daftar kegiatan yang telah berlangsung dan lihat laporan kehadiran."
+                    meta={`${finishedAgendaCount} kegiatan selesai`}
+                    to="/kegiatan"
+                  />
+                  {nextAgenda ? <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 sm:col-span-2"><MapPin className="h-4 w-4 text-mgmp-primary" /> Agenda berikutnya berlangsung di {nextAgenda.location || "lokasi yang akan diumumkan"}.</div> : null}
                 </div>
-              </div>
-              <Button asChild className="font-extrabold"><Link to="/profil"><User className="h-4 w-4" /> Buka Profil</Link></Button>
-            </div>
-          ) : null}
+              ) : null}
 
-          {currentStep === 1 ? (
-            <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
-              <div className="rounded-2xl border border-slate-200/70 bg-white/60 p-4 dark:border-white/10 dark:bg-white/5">
-                {nextAgenda ? (
-                  <>
-                    <div className="text-xs font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">Agenda berikutnya</div>
-                    <div className="mt-2 text-lg font-extrabold text-slate-800 dark:text-white">{nextAgenda.title}</div>
-                    <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-500 dark:text-slate-400">
-                      <span className="inline-flex items-center gap-1"><CalendarDays className="h-4 w-4" /> {formatDate(nextAgenda.date)}</span>
-                      <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" /> {nextAgenda.location || "-"}</span>
-                    </div>
-                  </>
-                ) : <div className="text-sm text-slate-500 dark:text-slate-400">Belum ada agenda mendatang.</div>}
-                <div className="mt-4 text-sm font-bold text-slate-600 dark:text-slate-300">{finishedAgendaCount} kegiatan telah selesai.</div>
-              </div>
-              <Button asChild variant="secondary" className="font-extrabold"><Link to="/kegiatan"><CalendarDays className="h-4 w-4" /> Lihat Agenda</Link></Button>
-            </div>
-          ) : null}
+              {currentStep === 2 ? (
+                <div className="grid gap-4 md:grid-cols-3">
+                  <WizardChoice Icon={Laptop2} title="Portofolio" description="Tampilkan karya, inovasi, dan praktik baik yang pernah Anda buat." meta={`${myPortfolios.length} karya tersimpan`} to="/portofolio" />
+                  <WizardChoice Icon={Newspaper} title="Berita" description="Bagikan kegiatan atau informasi yang bermanfaat bagi anggota." meta={`${myNews.length} berita dibagikan`} to="/berita" />
+                  <WizardChoice Icon={BookOpen} title="Bank Pembelajaran" description="Temukan atau bagikan modul ajar, perangkat, dan materi pembelajaran." meta="Buka ruang berbagi" to="/bank-pembelajaran" />
+                </div>
+              ) : null}
 
-          {currentStep === 2 ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200/70 bg-white/60 p-4 dark:border-white/10 dark:bg-white/5">
-                <Laptop2 className="h-5 w-5 text-emerald-500" />
-                <div className="mt-3 text-2xl font-extrabold text-slate-800 dark:text-white">{myPortfolios.length}</div>
-                <div className="text-sm text-slate-500 dark:text-slate-400">Karya di portofolio</div>
-                <Button asChild variant="ghost" size="sm" className="mt-3 px-0 font-extrabold"><Link to="/portofolio">Buka Portofolio <ArrowRight className="h-4 w-4" /></Link></Button>
-              </div>
-              <div className="rounded-2xl border border-slate-200/70 bg-white/60 p-4 dark:border-white/10 dark:bg-white/5">
-                <Newspaper className="h-5 w-5 text-sky-500" />
-                <div className="mt-3 text-2xl font-extrabold text-slate-800 dark:text-white">{myNews.length}</div>
-                <div className="text-sm text-slate-500 dark:text-slate-400">Berita yang dibagikan</div>
-                <Button asChild variant="ghost" size="sm" className="mt-3 px-0 font-extrabold"><Link to="/berita">Buka Berita <ArrowRight className="h-4 w-4" /></Link></Button>
-              </div>
-              <div className="rounded-2xl border border-slate-200/70 bg-white/60 p-4 dark:border-white/10 dark:bg-white/5 sm:col-span-2">
-                <BookOpen className="h-5 w-5 text-mgmp-primary" />
-                <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">Bagikan perangkat ajar dan praktik baik melalui Bank Pembelajaran.</div>
-                <Button asChild variant="ghost" size="sm" className="mt-2 px-0 font-extrabold"><Link to="/bank-pembelajaran">Buka Bank Pembelajaran <ArrowRight className="h-4 w-4" /></Link></Button>
-              </div>
+              {currentStep === 3 ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-600 to-indigo-700 p-5 text-white shadow-lg shadow-blue-900/10">
+                    <div className="flex items-center justify-between"><div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-white/70">Total XP</div><Sparkles className="h-5 w-5 text-amber-300" /></div>
+                    <div className="mt-7 text-5xl font-extrabold">{currentMember?.xp || 0}</div>
+                    <div className="mt-2 text-sm text-white/75">Poin keaktifan Anda di MGMP.</div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white/75 p-5 dark:border-white/10 dark:bg-white/[0.04]">
+                    <div className="flex items-center justify-between"><div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Peringkat anggota</div><Trophy className="h-5 w-5 text-amber-500" /></div>
+                    <div className="mt-7 text-5xl font-extrabold text-slate-900 dark:text-white">{memberRank ? `#${memberRank}` : "-"}</div>
+                    <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">Dari {members.length} anggota terdata.</div>
+                  </div>
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm leading-6 text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100 md:col-span-2">
+                    <div className="flex items-start gap-3"><Clock3 className="mt-0.5 h-5 w-5 shrink-0" /><span>Terus hadir di kegiatan dan bagikan praktik baik untuk meningkatkan progres keanggotaan Anda.</span></div>
+                  </div>
+                </div>
+              ) : null}
             </div>
-          ) : null}
 
-          {currentStep === 3 ? (
-            <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
-              <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-blue-600 to-indigo-700 p-5 text-white">
-                <div className="text-xs font-extrabold uppercase tracking-widest text-white/70">Total XP</div>
-                <div className="mt-2 text-4xl font-extrabold">{currentMember?.xp || 0}</div>
-                <div className="mt-1 text-sm text-white/80">Poin keaktifan Anda</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200/70 bg-white/60 p-5 dark:border-white/10 dark:bg-white/5">
-                <div className="text-xs font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">Peringkat</div>
-                <div className="mt-2 text-4xl font-extrabold text-slate-800 dark:text-white">{memberRank ? `#${memberRank}` : "-"}</div>
-                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Dari {members.length} anggota</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200/70 bg-white/60 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 md:col-span-2">
-                Terus hadir di kegiatan dan berkontribusi untuk meningkatkan progres keanggotaan Anda.
-              </div>
+            <div className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 pt-5 dark:border-white/10">
+              <Button variant="ghost" onClick={previousStep} disabled={currentStep === 0}><ArrowLeft className="h-4 w-4" /> Sebelumnya</Button>
+              {currentStep < STEPS.length - 1 ? (
+                <Button onClick={nextStep} className="min-w-32 font-extrabold">Langkah berikutnya <ArrowRight className="h-4 w-4" /></Button>
+              ) : (
+                <Button asChild className="min-w-32 font-extrabold"><Link to="/dashboard">Selesai <CheckCircle2 className="h-4 w-4" /></Link></Button>
+              )}
             </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button variant="ghost" onClick={previousStep} disabled={currentStep === 0}><ArrowLeft className="h-4 w-4" /> Sebelumnya</Button>
-        <div className="flex items-center gap-2">
-          {currentStep < STEPS.length - 1 ? <Button variant="ghost" onClick={() => setCurrentStep(STEPS.length - 1)}>Lewati ke Progres</Button> : null}
-          <Button onClick={nextStep} disabled={currentStep === STEPS.length - 1}>{currentStep === STEPS.length - 1 ? "Selesai" : "Berikutnya"} {currentStep < STEPS.length - 1 ? <ArrowRight className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}</Button>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
