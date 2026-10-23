@@ -400,7 +400,7 @@ export function AppLayout() {
         </DialogContent>
       </Dialog>
 
-      <footer className="hidden md:block mt-10 bg-gradient-to-b from-mgmp-blue to-[#081224] border-t border-slate-200/70 dark:border-white/10">
+      {!isMemberHome ? <footer className="hidden md:block mt-10 bg-gradient-to-b from-mgmp-blue to-[#081224] border-t border-slate-200/70 dark:border-white/10">
         <div className="container pt-14 pb-10">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
             <div>
@@ -488,7 +488,7 @@ export function AppLayout() {
             <Heart className="inline h-3.5 w-3.5 text-rose-300 align-[-2px]" fill="currentColor" /> for Education.
           </div>
         </div>
-      </footer>
+      </footer> : null}
     </div>
   );
 }

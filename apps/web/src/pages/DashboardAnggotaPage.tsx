@@ -8,9 +8,13 @@ import {
   CheckCircle2,
   Clock3,
   Laptop2,
+  Mail,
   MapPin,
   Newspaper,
+  Phone,
+  School,
   Sparkles,
+  ShieldCheck,
   Trophy,
   User,
   X
@@ -19,6 +23,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAppData } from "@/state/AppDataContext";
 import { useAuth } from "@/state/AuthContext";
 import { isPast } from "@/lib/mgmp";
@@ -48,7 +54,6 @@ function WizardChoice({
   description,
   meta,
   active = false,
-  to,
   onClick
 }: {
   Icon: LucideIcon;
@@ -56,8 +61,7 @@ function WizardChoice({
   description: string;
   meta?: string;
   active?: boolean;
-  to?: string;
-  onClick?: () => void;
+  onClick: () => void;
 }) {
   const className = [
     "group relative flex min-h-[142px] flex-col justify-between rounded-2xl border p-4 text-left transition-all",
@@ -81,13 +85,16 @@ function WizardChoice({
     </>
   );
 
-  return to ? <Link to={to} className={className}>{content}</Link> : <button type="button" onClick={onClick} className={className}>{content}</button>;
+  return <button type="button" onClick={onClick} className={className}>{content}</button>;
 }
+
+type MemberModal = "profile" | "identity" | "agenda" | "history" | "portfolio" | "news" | "learning" | "xp" | "rank" | null;
 
 export function DashboardAnggotaPage() {
   const { user, profileRegistered, memberStatus } = useAuth();
   const { members, agendas, news, portfolios } = useAppData();
   const [currentStep, setCurrentStep] = useState(0);
+  const [openModal, setOpenModal] = useState<MemberModal>(null);
   const storageKey = `mgmp-dashboard-step:${user?.email || user?.sub || "guest"}`;
 
   const memberEmail = (user?.email || "").trim().toLowerCase();
@@ -98,6 +105,14 @@ export function DashboardAnggotaPage() {
   const myNews = news.filter((item) => item.createdByEmail.trim().toLowerCase() === memberEmail);
   const nextAgenda = useMemo(
     () => agendas.filter((agenda) => !isPast(agenda.date)).sort((a, b) => a.date.localeCompare(b.date))[0] || null,
+    [agendas]
+  );
+  const upcomingAgendas = useMemo(
+    () => agendas.filter((agenda) => !isPast(agenda.date)).sort((a, b) => a.date.localeCompare(b.date)),
+    [agendas]
+  );
+  const finishedAgendas = useMemo(
+    () => agendas.filter((agenda) => isPast(agenda.date)).sort((a, b) => b.date.localeCompare(a.date)),
     [agendas]
   );
   const finishedAgendaCount = agendas.filter((agenda) => isPast(agenda.date)).length;
@@ -164,9 +179,12 @@ export function DashboardAnggotaPage() {
                   <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">{user?.email || "-"}</div>
                 </div>
               </div>
-              <Link to="/dashboard" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-white hover:text-mgmp-primary dark:hover:bg-white/10" aria-label="Tutup dashboard anggota" title="Kembali ke dashboard">
-                <X className="h-5 w-5" />
-              </Link>
+              <div className="flex shrink-0 items-center gap-1">
+                <ThemeToggle />
+                <Link to="/dashboard" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-white hover:text-mgmp-primary dark:hover:bg-white/10" aria-label="Tutup dashboard anggota" title="Kembali ke dashboard">
+                  <X className="h-5 w-5" />
+                </Link>
+              </div>
             </div>
 
             <div className="mt-8 hidden lg:block">
@@ -198,7 +216,7 @@ export function DashboardAnggotaPage() {
             <div className="mt-8 hidden rounded-2xl border border-blue-100 bg-blue-50/80 p-4 dark:border-blue-400/20 dark:bg-blue-500/10 lg:block">
               <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-mgmp-primary dark:text-blue-300">Tahukah Anda?</div>
               <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">{knowledgeNote}</p>
-              <Link to="/bank-pembelajaran" className="mt-3 inline-flex items-center gap-1 text-xs font-extrabold text-mgmp-primary hover:underline dark:text-blue-300">Jelajahi Bank Pembelajaran <ArrowRight className="h-3.5 w-3.5" /></Link>
+              <button type="button" onClick={() => setOpenModal("learning")} className="mt-3 inline-flex items-center gap-1 text-xs font-extrabold text-mgmp-primary hover:underline dark:text-blue-300">Jelajahi Bank Pembelajaran <ArrowRight className="h-3.5 w-3.5" /></button>
             </div>
           </aside>
 
@@ -221,14 +239,14 @@ export function DashboardAnggotaPage() {
                     description={currentMember?.school || "Isi informasi sekolah dan data kontak agar profil Anda siap digunakan."}
                     meta={membershipLabel(memberStatus, profileRegistered)}
                     active={profileRegistered}
-                    to="/profil"
+                    onClick={() => setOpenModal("profile")}
                   />
                   <WizardChoice
                     Icon={User}
                     title="Lihat identitas publik"
                     description="Periksa bagaimana nama dan sekolah Anda ditampilkan di daftar anggota MGMP."
                     meta={currentMember?.name || user?.name || "Anggota MGMP"}
-                    to="/anggota"
+                    onClick={() => setOpenModal("identity")}
                   />
                 </div>
               ) : null}
@@ -241,14 +259,14 @@ export function DashboardAnggotaPage() {
                     description={nextAgenda ? `${formatDate(nextAgenda.date)}${nextAgenda.time ? ` · ${nextAgenda.time}` : ""}` : "Lihat seluruh agenda dan kegiatan yang telah selesai."}
                     meta={nextAgenda ? `${nextAgenda.location || "Lokasi belum diatur"}` : `${finishedAgendaCount} kegiatan selesai`}
                     active={Boolean(nextAgenda)}
-                    to="/kegiatan"
+                    onClick={() => setOpenModal("agenda")}
                   />
                   <WizardChoice
                     Icon={CheckCircle2}
                     title="Riwayat kegiatan"
                     description="Buka daftar kegiatan yang telah berlangsung dan lihat laporan kehadiran."
                     meta={`${finishedAgendaCount} kegiatan selesai`}
-                    to="/kegiatan"
+                    onClick={() => setOpenModal("history")}
                   />
                   {nextAgenda ? <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 sm:col-span-2"><MapPin className="h-4 w-4 text-mgmp-primary" /> Agenda berikutnya berlangsung di {nextAgenda.location || "lokasi yang akan diumumkan"}.</div> : null}
                 </div>
@@ -256,24 +274,24 @@ export function DashboardAnggotaPage() {
 
               {currentStep === 2 ? (
                 <div className="grid gap-4 md:grid-cols-3">
-                  <WizardChoice Icon={Laptop2} title="Portofolio" description="Tampilkan karya, inovasi, dan praktik baik yang pernah Anda buat." meta={`${myPortfolios.length} karya tersimpan`} to="/portofolio" />
-                  <WizardChoice Icon={Newspaper} title="Berita" description="Bagikan kegiatan atau informasi yang bermanfaat bagi anggota." meta={`${myNews.length} berita dibagikan`} to="/berita" />
-                  <WizardChoice Icon={BookOpen} title="Bank Pembelajaran" description="Temukan atau bagikan modul ajar, perangkat, dan materi pembelajaran." meta="Buka ruang berbagi" to="/bank-pembelajaran" />
+                  <WizardChoice Icon={Laptop2} title="Portofolio" description="Tampilkan karya, inovasi, dan praktik baik yang pernah Anda buat." meta={`${myPortfolios.length} karya tersimpan`} onClick={() => setOpenModal("portfolio")} />
+                  <WizardChoice Icon={Newspaper} title="Berita" description="Bagikan kegiatan atau informasi yang bermanfaat bagi anggota." meta={`${myNews.length} berita dibagikan`} onClick={() => setOpenModal("news")} />
+                  <WizardChoice Icon={BookOpen} title="Bank Pembelajaran" description="Temukan atau bagikan modul ajar, perangkat, dan materi pembelajaran." meta="Buka ruang berbagi" onClick={() => setOpenModal("learning")} />
                 </div>
               ) : null}
 
               {currentStep === 3 ? (
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-600 to-indigo-700 p-5 text-white shadow-lg shadow-blue-900/10">
+                  <button type="button" onClick={() => setOpenModal("xp")} className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-600 to-indigo-700 p-5 text-left text-white shadow-lg shadow-blue-900/10 transition hover:-translate-y-0.5 hover:shadow-xl">
                     <div className="flex items-center justify-between"><div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-white/70">Total XP</div><Sparkles className="h-5 w-5 text-amber-300" /></div>
                     <div className="mt-7 text-5xl font-extrabold">{currentMember?.xp || 0}</div>
                     <div className="mt-2 text-sm text-white/75">Poin keaktifan Anda di MGMP.</div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white/75 p-5 dark:border-white/10 dark:bg-white/[0.04]">
+                  </button>
+                  <button type="button" onClick={() => setOpenModal("rank")} className="rounded-2xl border border-slate-200 bg-white/75 p-5 text-left dark:border-white/10 dark:bg-white/[0.04]">
                     <div className="flex items-center justify-between"><div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Peringkat anggota</div><Trophy className="h-5 w-5 text-amber-500" /></div>
                     <div className="mt-7 text-5xl font-extrabold text-slate-900 dark:text-white">{memberRank ? `#${memberRank}` : "-"}</div>
                     <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">Dari {members.length} anggota terdata.</div>
-                  </div>
+                  </button>
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm leading-6 text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100 md:col-span-2">
                     <div className="flex items-start gap-3"><Clock3 className="mt-0.5 h-5 w-5 shrink-0" /><span>Terus hadir di kegiatan dan bagikan praktik baik untuk meningkatkan progres keanggotaan Anda.</span></div>
                   </div>
@@ -292,6 +310,99 @@ export function DashboardAnggotaPage() {
           </div>
         </div>
       </section>
+
+      <Dialog open={Boolean(openModal)} onOpenChange={(open) => { if (!open) setOpenModal(null); }}>
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
+          {openModal === "profile" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Profil pribadi anggota</DialogTitle>
+                <DialogDescription>Informasi akun yang sedang digunakan untuk beraktivitas di MGMP.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-5 px-6 pb-6">
+                <div className="flex items-center gap-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-400/20 dark:bg-blue-500/10">
+                  {user?.picture ? <img src={user.picture} alt="" className="h-16 w-16 rounded-2xl object-cover" /> : <span className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-mgmp-primary text-2xl font-extrabold text-white">{(currentMember?.name || user?.name || "A").slice(0, 1).toUpperCase()}</span>}
+                  <div className="min-w-0"><div className="text-lg font-extrabold text-slate-900 dark:text-white">{currentMember?.name || user?.name || "Anggota MGMP"}</div><div className="mt-1 truncate text-sm text-slate-500 dark:text-slate-300">{currentMember?.school || "Sekolah belum tercatat"}</div><Badge variant="success" className="mt-2">{membershipLabel(memberStatus, profileRegistered)}</Badge></div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><Mail className="h-4 w-4" /> Email</div><div className="mt-1 break-all text-sm font-bold text-slate-800 dark:text-white">{user?.email || currentMember?.email || "-"}</div></div>
+                  <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><School className="h-4 w-4" /> Sekolah</div><div className="mt-1 text-sm font-bold text-slate-800 dark:text-white">{currentMember?.school || "-"}</div></div>
+                  <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><Phone className="h-4 w-4" /> WhatsApp</div><div className="mt-1 text-sm font-bold text-slate-800 dark:text-white">{currentMember?.wa || "-"}</div></div>
+                  <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><ShieldCheck className="h-4 w-4" /> XP saat ini</div><div className="mt-1 text-sm font-bold text-slate-800 dark:text-white">{currentMember?.xp || 0} XP</div></div>
+                </div>
+                <Button asChild className="w-full font-extrabold"><Link to="/profil" onClick={() => setOpenModal(null)}>Buka halaman profil</Link></Button>
+              </div>
+            </>
+          ) : null}
+
+          {openModal === "identity" ? (
+            <>
+              <DialogHeader><DialogTitle>Identitas anggota</DialogTitle><DialogDescription>Data ringkas yang tampil pada ruang anggota MGMP.</DialogDescription></DialogHeader>
+              <div className="space-y-4 px-6 pb-6">
+                <div className="rounded-2xl border border-slate-200 p-5 dark:border-white/10"><div className="text-2xl font-extrabold text-slate-900 dark:text-white">{currentMember?.name || user?.name || "Anggota MGMP"}</div><div className="mt-2 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><School className="h-4 w-4" /> {currentMember?.school || "Sekolah belum tercatat"}</div><div className="mt-4 flex flex-wrap gap-2"><Badge variant="primary">Anggota</Badge>{currentMember?.roles?.map((role) => <Badge key={role} variant="default">{role}</Badge>)}</div></div>
+                <div className="text-sm leading-6 text-slate-600 dark:text-slate-300">Profil ini digunakan untuk mengenali kontribusi Anda pada kegiatan, portofolio, berita, dan ruang pembelajaran MGMP.</div>
+              </div>
+            </>
+          ) : null}
+
+          {openModal === "agenda" ? (
+            <>
+              <DialogHeader><DialogTitle>Agenda mendatang</DialogTitle><DialogDescription>Kegiatan yang masih dapat Anda ikuti.</DialogDescription></DialogHeader>
+              <div className="space-y-3 px-6 pb-6">
+                {upcomingAgendas.length ? upcomingAgendas.slice(0, 8).map((agenda) => <div key={agenda.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="font-extrabold text-slate-900 dark:text-white">{agenda.title}</div><div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400"><span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" /> {formatDate(agenda.date)}</span><span className="inline-flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" /> {agenda.time || "Waktu belum ditentukan"}</span><span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {agenda.location || "Lokasi belum ditentukan"}</span></div></div>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada agenda mendatang.</div>}
+              </div>
+            </>
+          ) : null}
+
+          {openModal === "history" ? (
+            <>
+              <DialogHeader><DialogTitle>Riwayat kegiatan</DialogTitle><DialogDescription>Daftar kegiatan yang telah selesai.</DialogDescription></DialogHeader>
+              <div className="space-y-3 px-6 pb-6">
+                {finishedAgendas.length ? finishedAgendas.slice(0, 8).map((agenda) => <div key={agenda.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="flex items-start justify-between gap-3"><div className="font-extrabold text-slate-900 dark:text-white">{agenda.title}</div><Badge variant="success">Selesai</Badge></div><div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400"><span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" /> {formatDate(agenda.date)}</span><span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {agenda.location || "Lokasi tidak tercatat"}</span></div></div>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada riwayat kegiatan.</div>}
+              </div>
+            </>
+          ) : null}
+
+          {openModal === "portfolio" ? (
+            <>
+              <DialogHeader><DialogTitle>Portofolio saya</DialogTitle><DialogDescription>Karya dan praktik baik yang dibuat menggunakan akun ini.</DialogDescription></DialogHeader>
+              <div className="space-y-3 px-6 pb-6">
+                {myPortfolios.length ? myPortfolios.map((portfolio) => <div key={portfolio.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="font-extrabold text-slate-900 dark:text-white">{portfolio.title}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{portfolio.school || "Sekolah belum tercatat"}</div><div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{portfolio.description || "Belum ada deskripsi karya."}</div><div className="mt-3"><Badge variant={portfolio.publishStatus === "approved" ? "success" : "default"}>{portfolio.publishStatus}</Badge></div></div>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada karya di portofolio Anda.</div>}
+              </div>
+            </>
+          ) : null}
+
+          {openModal === "news" ? (
+            <>
+              <DialogHeader><DialogTitle>Berita yang dibagikan</DialogTitle><DialogDescription>Informasi dan kegiatan yang dibuat menggunakan akun ini.</DialogDescription></DialogHeader>
+              <div className="space-y-3 px-6 pb-6">
+                {myNews.length ? myNews.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="font-extrabold text-slate-900 dark:text-white">{item.title}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.category} · {formatDate(item.date)}</div><div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.summary || "Belum ada ringkasan berita."}</div><div className="mt-3"><Badge variant={item.publishStatus === "approved" ? "success" : "default"}>{item.publishStatus}</Badge></div></div>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada berita yang dibagikan.</div>}
+              </div>
+            </>
+          ) : null}
+
+          {openModal === "learning" ? (
+            <>
+              <DialogHeader><DialogTitle>Bank Pembelajaran</DialogTitle><DialogDescription>Ruang berbagi modul ajar dan praktik baik untuk anggota MGMP.</DialogDescription></DialogHeader>
+              <div className="space-y-4 px-6 pb-6"><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 dark:border-blue-400/20 dark:bg-blue-500/10"><BookOpen className="h-6 w-6 text-mgmp-primary dark:text-blue-300" /><div className="mt-3 font-extrabold text-slate-900 dark:text-white">Belajar dan berbagi bersama</div><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Temukan modul ajar, materi pembelajaran, asesmen, bank soal, dan praktik baik yang dapat digunakan bersama.</p></div><Button asChild className="w-full font-extrabold"><Link to="/bank-pembelajaran" onClick={() => setOpenModal(null)}>Buka Bank Pembelajaran</Link></Button></div>
+            </>
+          ) : null}
+
+          {openModal === "xp" ? (
+            <>
+              <DialogHeader><DialogTitle>Total XP Anda</DialogTitle><DialogDescription>XP menunjukkan akumulasi keaktifan Anda di MGMP.</DialogDescription></DialogHeader>
+              <div className="space-y-4 px-6 pb-6"><div className="rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 p-6 text-white"><div className="text-xs font-extrabold uppercase tracking-widest text-white/70">Total XP</div><div className="mt-3 text-5xl font-extrabold">{currentMember?.xp || 0}</div><div className="mt-2 text-sm text-white/80">Poin keaktifan yang tercatat pada profil Anda.</div></div><div className="text-sm leading-6 text-slate-600 dark:text-slate-300">XP dapat bertambah melalui partisipasi kegiatan dan kontribusi yang tercatat dalam sistem MGMP.</div></div>
+            </>
+          ) : null}
+
+          {openModal === "rank" ? (
+            <>
+              <DialogHeader><DialogTitle>Peringkat anggota</DialogTitle><DialogDescription>Urutan berdasarkan XP yang tercatat saat ini.</DialogDescription></DialogHeader>
+              <div className="space-y-2 px-6 pb-6">{[...members].sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 8).map((member, index) => <div key={member.id} className={["flex items-center gap-3 rounded-xl border p-3", member.id === currentMember?.id ? "border-blue-300 bg-blue-50 dark:border-blue-400/40 dark:bg-blue-500/10" : "border-slate-200 dark:border-white/10"].join(" ")}><span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-extrabold text-slate-600 dark:bg-white/10 dark:text-slate-300">#{index + 1}</span><div className="min-w-0 flex-1"><div className="truncate text-sm font-extrabold text-slate-900 dark:text-white">{member.name}</div><div className="truncate text-xs text-slate-500 dark:text-slate-400">{member.school}</div></div><div className="text-sm font-extrabold text-mgmp-primary">{member.xp || 0} XP</div></div>)}</div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
