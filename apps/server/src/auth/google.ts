@@ -179,7 +179,13 @@ export function googleAuthRouter(env: Env) {
       { secret: env.sessionSecret, secure: isHttps(env.webOrigin) }
     );
 
-    const landingPath = role === "admin" ? "/dashboard/admin" : role === "pengurus" ? "/dashboard/pengurus" : "/";
+    const landingPath = role === "admin"
+      ? "/dashboard/admin"
+      : role === "pengurus"
+        ? "/dashboard/pengurus"
+        : membershipStatus === "approved"
+          ? "/dashboard/anggota"
+          : "/";
     return c.redirect(`${env.webOrigin}${landingPath}?auth=success`);
   });
 

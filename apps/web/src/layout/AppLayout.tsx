@@ -85,7 +85,7 @@ export function AppLayout() {
   const { user, profileRegistered, memberStatus, refresh } = useAuth();
   const { homeContent } = useAppData();
   const showAdminBottomItem = hasRole(user, "admin");
-  const showDashboardNav = hasRole(user, "admin") || hasRole(user, "pengurus");
+  const showDashboardNav = hasRole(user, "admin") || hasRole(user, "pengurus") || hasRole(user, "anggota");
   const isReviewer = hasRole(user, "admin") || hasRole(user, "pengurus");
   const showNotifBell = Boolean(user);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
@@ -99,7 +99,7 @@ export function AppLayout() {
     ? "/dashboard/admin"
     : hasRole(user, "pengurus")
       ? "/dashboard/pengurus"
-      : "/dashboard";
+      : "/dashboard/anggota";
   const [openBadgeModal, setOpenBadgeModal] = useState(false);
   const [newBadgeMember, setNewBadgeMember] = useState<Member | null>(null);
 
