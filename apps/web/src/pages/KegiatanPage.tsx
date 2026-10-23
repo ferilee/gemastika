@@ -236,10 +236,16 @@ export function KegiatanPage() {
     setReportingAgendaId(agenda.id);
     try {
       const rows = await api<AttendanceRow[]>(`/api/agendas/${agenda.id}/attendance`);
+      const boardRows = await api<Array<{ name: string; title: string; sortOrder: number }>>("/api/board");
+      const chairmanName = boardRows.find((member) => member.title.trim().toLowerCase().includes("ketua"))?.name || "Ketua MGMP";
       const doc = new jsPDF({ unit: "mm", format: "a4" });
       const generatedAt = new Intl.DateTimeFormat("id-ID", {
-        dateStyle: "long",
-        timeStyle: "short"
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
       }).format(new Date());
 
       let logoDataUrl = "";
@@ -248,7 +254,7 @@ export function KegiatanPage() {
       } catch {
         // Kop teks tetap dibuat jika logo eksternal tidak tersedia.
       }
-      if (logoDataUrl) doc.addImage(logoDataUrl, "PNG", 14, 9, 27, 27);
+      if (logoDataUrl) doc.addImage(logoDataUrl, "PNG", 14, 8, 27, 33);
 
       const headerCenter = 105;
       doc.setFont("times", "bold");
@@ -275,31 +281,49 @@ export function KegiatanPage() {
       doc.text(agenda.title, 14, 69);
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
-      doc.text(`Tanggal: ${agenda.date} • Waktu: ${agenda.time || "-"}`, 14, 76);
-      doc.text(`Lokasi: ${agenda.location || "-"}`, 14, 82);
-      doc.text(`Dibuat: ${generatedAt}`, 14, 88);
+      doc.text(`Tanggal: ${agenda.date} • Waktu: ${agenda.time || "-"} • Lokasi: ${agenda.location || "-"}`, 14, 76, { maxWidth: 182 });
+      doc.setFillColor(219, 234, 254);
+      doc.roundedRect(14, 82, 84, 8, 1.5, 1.5, "F");
+      doc.setTextColor(30, 64, 175);
       doc.setFontSize(8.5);
-      doc.text("Keterangan XP: XP (Experience Points) adalah poin penghargaan keaktifan anggota.", 14, 95);
-      doc.text("Pada laporan ini, XP menunjukkan poin yang diberikan untuk kehadiran pada kegiatan tersebut.", 14, 100);
+      doc.text(`Dibuat: ${generatedAt}`, 18, 87.2);
+      doc.setTextColor(0, 0, 0);
 
       autoTable(doc, {
-        startY: 107,
-        head: [["No", "Nama", "Instansi", "Peran", "XP", "Waktu hadir"]],
+        startY: 97,
+        head: [["No", "Nama", "Instansi", "Peran", "Waktu hadir"]],
         body: rows.length
           ? rows.map((row, index) => [
               String(index + 1),
               row.memberName,
               schoolNameOnly(row.memberSchool),
               roleLabel(row.memberRole as Member["role"]),
-              `+${row.xpAwarded}`,
               new Intl.DateTimeFormat("id-ID", { dateStyle: "short", timeStyle: "short" }).format(new Date(row.createdAt))
             ])
-          : [["-", "Belum ada anggota yang hadir", "-", "-", "-", "-"]],
+          : [["-", "Belum ada anggota yang hadir", "-", "-", "-"]],
         theme: "grid",
         styles: { fontSize: 8, cellPadding: 2.5, overflow: "linebreak" },
         headStyles: { fillColor: [29, 78, 216], textColor: 255 },
-        columnStyles: { 0: { cellWidth: 10 }, 4: { cellWidth: 14 } }
+        columnStyles: { 0: { cellWidth: 10 } }
       });
+
+      const finalY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 110;
+      let approvalY = finalY + 18;
+      if (approvalY > 245) {
+        doc.addPage();
+        approvalY = 25;
+      }
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text("Mengetahui,", 151, approvalY, { align: "center" });
+      doc.setFont("helvetica", "bold");
+      doc.text("Ketua MGMP Matematika SMK Kabupaten Lumajang", 151, approvalY + 6, { align: "center" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text("(tanda tangan dan stempel)", 151, approvalY + 29, { align: "center" });
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text(chairmanName, 151, approvalY + 38, { align: "center" });
 
       const safeTitle = agenda.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
       doc.save(`laporan-kehadiran-${safeTitle || agenda.id}-${agenda.date}.pdf`);
