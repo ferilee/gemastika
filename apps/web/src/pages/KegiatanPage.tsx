@@ -1,5 +1,7 @@
-import { AlertTriangle, CalendarDays, ChevronRight, Clock, Eye, MapPin, Pencil, Plus, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronRight, Clock, Download, Eye, MapPin, Pencil, Plus, Trash2, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAppData } from "@/state/AppDataContext";
@@ -22,6 +24,16 @@ function schoolNameOnly(school: string) {
   return school.split(" - ")[0]?.trim() || school;
 }
 
+type AttendanceRow = {
+  id: number;
+  memberId: number;
+  memberName: string;
+  memberSchool: string;
+  memberRole: string;
+  xpAwarded: number;
+  createdAt: string;
+};
+
 export function KegiatanPage() {
   const { user, isApprovedMember } = useAuth();
   const { agendas, loading, members, patchMember, reload } = useAppData();
@@ -43,11 +55,10 @@ export function KegiatanPage() {
   const [openFinishedModal, setOpenFinishedModal] = useState(false);
   const [openFinalConfirm, setOpenFinalConfirm] = useState(false);
   const [attendanceAgendaId, setAttendanceAgendaId] = useState<number | null>(null);
-  const [attendanceRows, setAttendanceRows] = useState<
-    Array<{ id: number; memberId: number; memberName: string; memberSchool: string; memberRole: string; xpAwarded: number; createdAt: string }>
-  >([]);
+  const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
   const [attendanceCountByAgenda, setAttendanceCountByAgenda] = useState<Record<number, number>>({});
   const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [reportingAgendaId, setReportingAgendaId] = useState<number | null>(null);
   const [attendanceInstansiFilter, setAttendanceInstansiFilter] = useState("all");
   const [openAttendSuccess, setOpenAttendSuccess] = useState(false);
   const [earnedXp, setEarnedXp] = useState(0);
@@ -101,9 +112,7 @@ export function KegiatanPage() {
       try {
         const entries = await Promise.all(
           agendas.map(async (a) => {
-            const rows = await api<
-              Array<{ id: number; memberId: number; memberName: string; memberSchool: string; memberRole: string; xpAwarded: number; createdAt: string }>
-            >(`/api/agendas/${a.id}/attendance`);
+            const rows = await api<AttendanceRow[]>(`/api/agendas/${a.id}/attendance`);
             return [a.id, rows.length] as const;
           })
         );
@@ -200,14 +209,61 @@ export function KegiatanPage() {
     setAttendanceInstansiFilter("all");
     setLoadingAttendance(true);
     try {
-      const rows = await api<
-        Array<{ id: number; memberId: number; memberName: string; memberSchool: string; memberRole: string; xpAwarded: number; createdAt: string }>
-      >(`/api/agendas/${agendaId}/attendance`);
+      const rows = await api<AttendanceRow[]>(`/api/agendas/${agendaId}/attendance`);
       setAttendanceRows(rows || []);
     } catch {
       setAttendanceRows([]);
     } finally {
       setLoadingAttendance(false);
+    }
+  }
+
+  async function downloadAttendanceReport(agenda: typeof finishedAgendas[number]) {
+    setReportingAgendaId(agenda.id);
+    try {
+      const rows = await api<AttendanceRow[]>(`/api/agendas/${agenda.id}/attendance`);
+      const doc = new jsPDF({ unit: "mm", format: "a4" });
+      const generatedAt = new Intl.DateTimeFormat("id-ID", {
+        dateStyle: "long",
+        timeStyle: "short"
+      }).format(new Date());
+
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text("Laporan Daftar Hadir", 14, 18);
+      doc.setFontSize(12);
+      doc.text(agenda.title, 14, 27);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Tanggal: ${agenda.date} • Waktu: ${agenda.time || "-"}`, 14, 34);
+      doc.text(`Lokasi: ${agenda.location || "-"}`, 14, 40);
+      doc.text(`Dibuat: ${generatedAt}`, 14, 46);
+
+      autoTable(doc, {
+        startY: 54,
+        head: [["No", "Nama", "Instansi", "Peran", "XP", "Waktu hadir"]],
+        body: rows.length
+          ? rows.map((row, index) => [
+              String(index + 1),
+              row.memberName,
+              schoolNameOnly(row.memberSchool),
+              roleLabel(row.memberRole as Member["role"]),
+              `+${row.xpAwarded}`,
+              new Intl.DateTimeFormat("id-ID", { dateStyle: "short", timeStyle: "short" }).format(new Date(row.createdAt))
+            ])
+          : [["-", "Belum ada anggota yang hadir", "-", "-", "-", "-"]],
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 2.5, overflow: "linebreak" },
+        headStyles: { fillColor: [29, 78, 216], textColor: 255 },
+        columnStyles: { 0: { cellWidth: 10 }, 4: { cellWidth: 14 } }
+      });
+
+      const safeTitle = agenda.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      doc.save(`laporan-kehadiran-${safeTitle || agenda.id}-${agenda.date}.pdf`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Gagal membuat laporan PDF.");
+    } finally {
+      setReportingAgendaId(null);
     }
   }
 
@@ -659,7 +715,19 @@ export function KegiatanPage() {
                           </span>
                         </div>
                       </div>
-                      <Badge variant="default">Selesai</Badge>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void downloadAttendanceReport(a)}
+                          disabled={reportingAgendaId === a.id}
+                          aria-label={`Unduh laporan kehadiran ${a.title}`}
+                        >
+                          <Download className="h-4 w-4" />
+                          <span className="hidden sm:inline">{reportingAgendaId === a.id ? "Membuat..." : "PDF"}</span>
+                        </Button>
+                        <Badge variant="default">Selesai</Badge>
+                      </div>
                     </div>
                     {a.description ? <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">{a.description}</div> : null}
                   </div>
