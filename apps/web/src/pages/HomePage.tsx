@@ -29,7 +29,7 @@ type ProfileStatus = {
 };
 
 export function HomePage() {
-  const { members, agendas, news, portfolios, homeContent, loading, error, patchMember } = useAppData();
+  const { members, agendas, news, homeContent, loading, error, patchMember } = useAppData();
   const { user } = useAuth();
   const [openProfile, setOpenProfile] = useState(false);
   const [profileData, setProfileData] = useState<Member | null>(null);
@@ -42,6 +42,7 @@ export function HomePage() {
   const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
   const [profileWebsiteUrl, setProfileWebsiteUrl] = useState("");
   const [featuredResources, setFeaturedResources] = useState<LearningResource[]>([]);
+  const [learningResourceCount, setLearningResourceCount] = useState(0);
 
   const upcomingAgenda = (() => {
     const next = agendas.find((a) => !isPast(a.date));
@@ -89,6 +90,14 @@ export function HomePage() {
     void api<LearningResource[]>("/api/learning-resources/featured")
       .then((resources) => { if (!cancelled) setFeaturedResources(resources); })
       .catch(() => { if (!cancelled) setFeaturedResources([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api<LearningResource[]>("/api/learning-resources")
+      .then((resources) => { if (!cancelled) setLearningResourceCount(resources.length); })
+      .catch(() => { if (!cancelled) setLearningResourceCount(0); });
     return () => { cancelled = true; };
   }, []);
 
@@ -287,7 +296,7 @@ export function HomePage() {
           <Card className="relative overflow-hidden bg-mgmp-accent text-white">
             <div aria-hidden className="absolute -bottom-10 -right-10 h-40 w-40 rounded-3xl bg-white/20 blur-[1px]" />
             <CardContent className="py-4 md:py-8 px-3 md:px-6 text-center">
-              <div className="text-2xl md:text-4xl font-extrabold">{`${Math.max(50, portfolios.length)}+`}</div>
+              <div className="text-2xl md:text-4xl font-extrabold">{learningResourceCount}</div>
               <div className="text-[11px] md:text-sm font-semibold opacity-95">Modul Ajar</div>
               <Button asChild variant="secondary" className="mt-3 bg-white/25 text-white hover:bg-white/35 hidden md:inline-flex">
                 <Link to="/portofolio">Akses Bank Data</Link>
