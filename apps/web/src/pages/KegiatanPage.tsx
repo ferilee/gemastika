@@ -24,6 +24,8 @@ function schoolNameOnly(school: string) {
   return school.split(" - ")[0]?.trim() || school;
 }
 
+const REPORT_LOGO_URL = "https://i.ibb.co.com/849tt9RT/Logo-MGMP-1-20260109-201844-0000.png";
+
 type AttendanceRow = {
   id: number;
   memberId: number;
@@ -33,6 +35,18 @@ type AttendanceRow = {
   xpAwarded: number;
   createdAt: string;
 };
+
+async function imageUrlToDataUrl(url: string) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Logo kop tidak dapat dimuat.");
+  const blob = await response.blob();
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Format logo tidak valid."));
+    reader.onerror = () => reject(new Error("Logo kop tidak dapat dibaca."));
+    reader.readAsDataURL(blob);
+  });
+}
 
 export function KegiatanPage() {
   const { user, isApprovedMember } = useAuth();
@@ -228,19 +242,48 @@ export function KegiatanPage() {
         timeStyle: "short"
       }).format(new Date());
 
+      let logoDataUrl = "";
+      try {
+        logoDataUrl = await imageUrlToDataUrl(REPORT_LOGO_URL);
+      } catch {
+        // Kop teks tetap dibuat jika logo eksternal tidak tersedia.
+      }
+      if (logoDataUrl) doc.addImage(logoDataUrl, "PNG", 14, 9, 27, 27);
+
+      const headerCenter = 105;
+      doc.setFont("times", "bold");
+      doc.setFontSize(14);
+      doc.text("MUSYAWARAH GURU MATA PELAJARAN (MGMP)", headerCenter, 15, { align: "center" });
       doc.setFontSize(16);
+      doc.text("MATEMATIKA SMK KABUPATEN LUMAJANG", headerCenter, 23, { align: "center" });
+      doc.setFont("times", "normal");
+      doc.setFontSize(10);
+      doc.text("Sekretariat : SMK Negeri Pasirian,", headerCenter, 30, { align: "center" });
+      doc.text("Jalan Raya Condro, Pasirian, Lumajang, Telp. (0334) 574253", headerCenter, 36, { align: "center" });
+      doc.setTextColor(0, 0, 220);
+      doc.text("Email : mgmp.mtk.smk.lumajang@gmail.com", headerCenter, 42, { align: "center" });
+      doc.setTextColor(0, 0, 0);
+      doc.setLineWidth(0.7);
+      doc.line(14, 47, 196, 47);
+      doc.setLineWidth(0.25);
+      doc.line(14, 49, 196, 49);
+
       doc.setFont("helvetica", "bold");
-      doc.text("Laporan Daftar Hadir", 14, 18);
+      doc.setFontSize(14);
+      doc.text("Laporan Daftar Hadir", 14, 60);
       doc.setFontSize(12);
-      doc.text(agenda.title, 14, 27);
+      doc.text(agenda.title, 14, 69);
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
-      doc.text(`Tanggal: ${agenda.date} • Waktu: ${agenda.time || "-"}`, 14, 34);
-      doc.text(`Lokasi: ${agenda.location || "-"}`, 14, 40);
-      doc.text(`Dibuat: ${generatedAt}`, 14, 46);
+      doc.text(`Tanggal: ${agenda.date} • Waktu: ${agenda.time || "-"}`, 14, 76);
+      doc.text(`Lokasi: ${agenda.location || "-"}`, 14, 82);
+      doc.text(`Dibuat: ${generatedAt}`, 14, 88);
+      doc.setFontSize(8.5);
+      doc.text("Keterangan XP: XP (Experience Points) adalah poin penghargaan keaktifan anggota.", 14, 95);
+      doc.text("Pada laporan ini, XP menunjukkan poin yang diberikan untuk kehadiran pada kegiatan tersebut.", 14, 100);
 
       autoTable(doc, {
-        startY: 54,
+        startY: 107,
         head: [["No", "Nama", "Instansi", "Peran", "XP", "Waktu hadir"]],
         body: rows.length
           ? rows.map((row, index) => [
