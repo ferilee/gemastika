@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ user, profileRegistered, memberStatus, isApprovedMember: memberStatus === "approved", loading, refresh }),
+    () => ({ user, profileRegistered, memberStatus, isApprovedMember: Boolean(user && memberStatus === "approved"), loading, refresh }),
     [user, profileRegistered, memberStatus, loading]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

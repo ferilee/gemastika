@@ -275,7 +275,7 @@ export function PortofolioPage() {
               className="pl-9"
             />
           </div>
-          {isApprovedMember ? (
+          {user && isApprovedMember ? (
             <Button variant="accent" onClick={() => setOpenPortfolioCreate(true)} className="w-full md:w-auto">
               <FilePlus2 className="h-4 w-4" /> Kirim Portofolio
             </Button>
@@ -525,7 +525,7 @@ export function PortofolioPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openPortfolioCreate && isApprovedMember} onOpenChange={setOpenPortfolioCreate}>
+      <Dialog open={openPortfolioCreate && Boolean(user) && isApprovedMember} onOpenChange={setOpenPortfolioCreate}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Kirim Portofolio</DialogTitle>

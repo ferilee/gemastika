@@ -371,7 +371,7 @@ export function BeritaPage() {
               ))}
             </SelectContent>
           </Select>
-          {isApprovedMember ? (
+          {user && isApprovedMember ? (
             <Button variant="accent" onClick={() => setOpenNewsCreate(true)} className="w-full md:w-auto">
               <FilePlus2 className="h-4 w-4" /> Tambah Berita
             </Button>
@@ -682,7 +682,7 @@ export function BeritaPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openNewsCreate && isApprovedMember} onOpenChange={setOpenNewsCreate}>
+      <Dialog open={openNewsCreate && Boolean(user) && isApprovedMember} onOpenChange={setOpenNewsCreate}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Kirim Berita</DialogTitle>
