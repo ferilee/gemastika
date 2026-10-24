@@ -13,6 +13,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { DashboardAdminPage } from "@/pages/DashboardAdminPage";
 import { DashboardPengurusPage } from "@/pages/DashboardPengurusPage";
 import { DashboardAnggotaPage } from "@/pages/DashboardAnggotaPage";
+import { FeedbackPage } from "@/pages/FeedbackPage";
 import { RequireAuth, RequireRole } from "@/components/RouteGuards";
 import { hasRole, useAuth } from "@/state/AuthContext";
 
@@ -48,6 +49,8 @@ export default function App() {
               <Route path="/portofolio" element={<PortofolioPage />} />
               <Route path="/bank-pembelajaran" element={<BankPembelajaranPage />} />
               <Route path="/bank-pembelajaran/:permalink" element={<BankPembelajaranPage />} />
+              <Route path="/kritik-saran" element={<FeedbackPage />} />
+              <Route path="/testimoni" element={<FeedbackPage />} />
 
               <Route
                 path="/dashboard"

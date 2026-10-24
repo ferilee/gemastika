@@ -11,10 +11,8 @@ import {
   Mail,
   MapPin,
   Newspaper,
-  Phone,
   School,
   Sparkles,
-  ShieldCheck,
   Trophy,
   User,
   UserCheck,
@@ -92,14 +90,21 @@ function WizardChoice({
 
 type MemberModal = "profile" | "identity" | "agenda" | "history" | "portfolio" | "news" | "learning" | "xp" | "rank" | null;
 
+const learningCategories = ["RPP / Modul Ajar", "Materi Pembelajaran", "Asesmen Interaktif", "LKPD Interaktif", "Bank Soal", "Media Pembelajaran", "Praktik Baik", "Perangkat Administrasi"] as const;
+
 export function DashboardAnggotaPage() {
   const { user, profileRegistered, memberStatus } = useAuth();
-  const { members, agendas, news, portfolios } = useAppData();
+  const { members, agendas, news, portfolios, addNews, addPortfolio, patchMember } = useAppData();
   const [currentStep, setCurrentStep] = useState(0);
   const [openModal, setOpenModal] = useState<MemberModal>(null);
   const [attendanceStatus, setAttendanceStatus] = useState<Record<number, boolean>>({});
   const [savingAttendanceId, setSavingAttendanceId] = useState<number | null>(null);
   const [attendanceNotice, setAttendanceNotice] = useState("");
+  const [savingForm, setSavingForm] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: "", school: "", wa: "", telegram: "", photoUrl: "", profileUrl: "" });
+  const [portfolioForm, setPortfolioForm] = useState({ teacherName: "", school: "", title: "", description: "", link: "", photoUrl: "" });
+  const [newsForm, setNewsForm] = useState({ title: "", category: "Kegiatan", author: "", date: new Date().toISOString().slice(0, 10), imageUrl: "", summary: "", content: "", documentUrl: "" });
+  const [learningForm, setLearningForm] = useState({ title: "", category: "RPP / Modul Ajar" as (typeof learningCategories)[number], description: "", phase: "Fase E", grade: "", topic: "", semester: "", curriculum: "Kurikulum Merdeka", resourceUrl: "", tags: "", changeNote: "" });
   const storageKey = `mgmp-dashboard-step:${user?.email || user?.sub || "guest"}`;
 
   const memberEmail = (user?.email || "").trim().toLowerCase();
@@ -130,6 +135,88 @@ export function DashboardAnggotaPage() {
   const knowledgeNote = totalContributions > 0
     ? `Anda sudah membagikan ${totalContributions} kontribusi. Terima kasih sudah menghidupkan ruang berbagi MGMP.`
     : "Satu karya atau berita yang Anda bagikan dapat membantu anggota lain belajar lebih cepat.";
+
+  function openProfileModal() {
+    setProfileForm({
+      name: currentMember?.name || user?.name || "",
+      school: currentMember?.school || "",
+      wa: currentMember?.wa || "",
+      telegram: currentMember?.telegram || "",
+      photoUrl: currentMember?.photoUrl || "",
+      profileUrl: currentMember?.profileUrl || ""
+    });
+    setOpenModal("profile");
+  }
+
+  function openPortfolioModal() {
+    setPortfolioForm({ teacherName: currentMember?.name || user?.name || "", school: currentMember?.school || "", title: "", description: "", link: "", photoUrl: "" });
+    setOpenModal("portfolio");
+  }
+
+  function openNewsModal() {
+    setNewsForm({ title: "", category: "Kegiatan", author: currentMember?.name || user?.name || "Anggota MGMP", date: new Date().toISOString().slice(0, 10), imageUrl: "", summary: "", content: "", documentUrl: "" });
+    setOpenModal("news");
+  }
+
+  function openLearningModal() {
+    setLearningForm({ title: "", category: "RPP / Modul Ajar", description: "", phase: "Fase E", grade: "", topic: "", semester: "", curriculum: "Kurikulum Merdeka", resourceUrl: "", tags: "", changeNote: "" });
+    setOpenModal("learning");
+  }
+
+  async function saveProfile() {
+    setSavingForm(true);
+    try {
+      const result = await api<{ member: import("@/types").Member }>("/api/profile/me", { method: "POST", body: JSON.stringify(profileForm) });
+      patchMember(result.member);
+      setOpenModal(null);
+      alert("Profil anggota berhasil diperbarui.");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Profil belum dapat disimpan.");
+    } finally {
+      setSavingForm(false);
+    }
+  }
+
+  async function savePortfolio() {
+    setSavingForm(true);
+    try {
+      const created = await api<import("@/types").Portfolio>("/api/portfolios", { method: "POST", body: JSON.stringify(portfolioForm) });
+      addPortfolio(created);
+      setOpenModal(null);
+      alert("Portofolio dikirim dan menunggu pemeriksaan pengurus.");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Portofolio belum dapat disimpan.");
+    } finally {
+      setSavingForm(false);
+    }
+  }
+
+  async function saveNews() {
+    setSavingForm(true);
+    try {
+      const created = await api<import("@/types").News>("/api/news", { method: "POST", body: JSON.stringify(newsForm) });
+      addNews(created);
+      setOpenModal(null);
+      alert("Berita dikirim dan menunggu pemeriksaan pengurus.");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Berita belum dapat disimpan.");
+    } finally {
+      setSavingForm(false);
+    }
+  }
+
+  async function saveLearningResource() {
+    setSavingForm(true);
+    try {
+      await api("/api/learning-resources", { method: "POST", body: JSON.stringify({ ...learningForm, sourceType: "link", resourceUrl: learningForm.resourceUrl, fileName: "", thumbnailUrl: "", storageKey: "", thumbnailStorageKey: "" }) });
+      setOpenModal(null);
+      alert("Materi dikirim dan menunggu pemeriksaan pengurus.");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Materi belum dapat disimpan.");
+    } finally {
+      setSavingForm(false);
+    }
+  }
 
   function attendanceState(agenda: typeof agendas[number]) {
     if (!agenda.attendanceOpenAt || !agenda.attendanceCloseAt) return "not_configured" as const;
@@ -286,7 +373,7 @@ export function DashboardAnggotaPage() {
                     description={currentMember?.school || "Isi informasi sekolah dan data kontak agar profil Anda siap digunakan."}
                     meta={membershipLabel(memberStatus, profileRegistered)}
                     active={profileRegistered}
-                    onClick={() => setOpenModal("profile")}
+                    onClick={openProfileModal}
                   />
                   <WizardChoice
                     Icon={User}
@@ -321,9 +408,9 @@ export function DashboardAnggotaPage() {
 
               {currentStep === 2 ? (
                 <div className="grid gap-4 md:grid-cols-3">
-                  <WizardChoice Icon={Laptop2} title="Portofolio" description="Tampilkan karya, inovasi, dan praktik baik yang pernah Anda buat." meta={`${myPortfolios.length} karya tersimpan`} onClick={() => setOpenModal("portfolio")} />
-                  <WizardChoice Icon={Newspaper} title="Berita" description="Bagikan kegiatan atau informasi yang bermanfaat bagi anggota." meta={`${myNews.length} berita dibagikan`} onClick={() => setOpenModal("news")} />
-                  <WizardChoice Icon={BookOpen} title="Bank Pembelajaran" description="Temukan atau bagikan modul ajar, perangkat, dan materi pembelajaran." meta="Buka ruang berbagi" onClick={() => setOpenModal("learning")} />
+                  <WizardChoice Icon={Laptop2} title="Portofolio" description="Tampilkan karya, inovasi, dan praktik baik yang pernah Anda buat." meta={`${myPortfolios.length} karya tersimpan`} onClick={openPortfolioModal} />
+                  <WizardChoice Icon={Newspaper} title="Berita" description="Bagikan kegiatan atau informasi yang bermanfaat bagi anggota." meta={`${myNews.length} berita dibagikan`} onClick={openNewsModal} />
+                  <WizardChoice Icon={BookOpen} title="Bank Pembelajaran" description="Temukan atau bagikan modul ajar, perangkat, dan materi pembelajaran." meta="Buka ruang berbagi" onClick={openLearningModal} />
                 </div>
               ) : null}
 
@@ -363,22 +450,25 @@ export function DashboardAnggotaPage() {
           {openModal === "profile" ? (
             <>
               <DialogHeader>
-                <DialogTitle>Profil pribadi anggota</DialogTitle>
-                <DialogDescription>Informasi akun yang sedang digunakan untuk beraktivitas di MGMP.</DialogDescription>
+                <DialogTitle>Edit profil anggota</DialogTitle>
+                <DialogDescription>Perbarui data yang digunakan untuk aktivitas dan keanggotaan MGMP.</DialogDescription>
               </DialogHeader>
-              <div className="space-y-5 px-6 pb-6">
+              <form className="space-y-4 px-6 pb-6" onSubmit={(event) => { event.preventDefault(); void saveProfile(); }}>
                 <div className="flex items-center gap-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-400/20 dark:bg-blue-500/10">
                   {user?.picture ? <img src={user.picture} alt="" className="h-16 w-16 rounded-2xl object-cover" /> : <span className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-mgmp-primary text-2xl font-extrabold text-white">{(currentMember?.name || user?.name || "A").slice(0, 1).toUpperCase()}</span>}
                   <div className="min-w-0"><div className="text-lg font-extrabold text-slate-900 dark:text-white">{currentMember?.name || user?.name || "Anggota MGMP"}</div><div className="mt-1 truncate text-sm text-slate-500 dark:text-slate-300">{currentMember?.school || "Sekolah belum tercatat"}</div><Badge variant="success" className="mt-2">{membershipLabel(memberStatus, profileRegistered)}</Badge></div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><Mail className="h-4 w-4" /> Email</div><div className="mt-1 break-all text-sm font-bold text-slate-800 dark:text-white">{user?.email || currentMember?.email || "-"}</div></div>
-                  <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><School className="h-4 w-4" /> Sekolah</div><div className="mt-1 text-sm font-bold text-slate-800 dark:text-white">{currentMember?.school || "-"}</div></div>
-                  <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><Phone className="h-4 w-4" /> WhatsApp</div><div className="mt-1 text-sm font-bold text-slate-800 dark:text-white">{currentMember?.wa || "-"}</div></div>
-                  <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><ShieldCheck className="h-4 w-4" /> XP saat ini</div><div className="mt-1 text-sm font-bold text-slate-800 dark:text-white">{currentMember?.xp || 0} XP</div></div>
+                  <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">Nama lengkap<input required minLength={3} value={profileForm.name} onChange={(event) => setProfileForm((form) => ({ ...form, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-mgmp-primary dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
+                  <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">Sekolah<input required minLength={3} value={profileForm.school} onChange={(event) => setProfileForm((form) => ({ ...form, school: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-mgmp-primary dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
+                  <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><Mail className="h-4 w-4" /> Email akun</div><div className="mt-1 break-all text-sm font-bold text-slate-800 dark:text-white">{user?.email || currentMember?.email || "-"}</div></div>
+                  <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">WhatsApp<input value={profileForm.wa} onChange={(event) => setProfileForm((form) => ({ ...form, wa: event.target.value }))} placeholder="08..." className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-mgmp-primary dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
+                  <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">Telegram<input value={profileForm.telegram} onChange={(event) => setProfileForm((form) => ({ ...form, telegram: event.target.value }))} placeholder="@username" className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-mgmp-primary dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
+                  <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">URL foto profil<input type="url" value={profileForm.photoUrl} onChange={(event) => setProfileForm((form) => ({ ...form, photoUrl: event.target.value }))} placeholder="https://..." className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-mgmp-primary dark:border-white/10 dark:bg-white/5 dark:text-white" /></label>
                 </div>
-                <Button asChild className="w-full font-extrabold"><Link to="/profil" onClick={() => setOpenModal(null)}>Edit profil</Link></Button>
-              </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Isi minimal salah satu kontak: WhatsApp atau Telegram.</p>
+                <Button type="submit" className="w-full font-extrabold" disabled={savingForm}>{savingForm ? "Menyimpan..." : "Simpan perubahan"}</Button>
+              </form>
             </>
           ) : null}
 
@@ -422,7 +512,16 @@ export function DashboardAnggotaPage() {
               <DialogHeader><DialogTitle>Portofolio saya</DialogTitle><DialogDescription>Karya dan praktik baik yang dibuat menggunakan akun ini.</DialogDescription></DialogHeader>
               <div className="space-y-3 px-6 pb-6">
                 {myPortfolios.length ? myPortfolios.map((portfolio) => <div key={portfolio.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="font-extrabold text-slate-900 dark:text-white">{portfolio.title}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{portfolio.school || "Sekolah belum tercatat"}</div><div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{portfolio.description || "Belum ada deskripsi karya."}</div><div className="mt-3"><Badge variant={portfolio.publishStatus === "approved" ? "success" : "default"}>{portfolio.publishStatus}</Badge></div></div>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada karya di portofolio Anda.</div>}
-                <Button asChild className="w-full font-extrabold"><Link to="/portofolio" onClick={() => setOpenModal(null)}>Tambah portofolio</Link></Button>
+                <form className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-400/20 dark:bg-blue-500/10" onSubmit={(event) => { event.preventDefault(); void savePortfolio(); }}>
+                  <div className="text-sm font-extrabold text-slate-800 dark:text-white">Tambah portofolio</div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input required minLength={3} value={portfolioForm.title} onChange={(event) => setPortfolioForm((form) => ({ ...form, title: event.target.value }))} placeholder="Judul karya" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" />
+                    <input value={portfolioForm.school} onChange={(event) => setPortfolioForm((form) => ({ ...form, school: event.target.value }))} placeholder="Sekolah" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" />
+                  </div>
+                  <textarea required minLength={10} value={portfolioForm.description} onChange={(event) => setPortfolioForm((form) => ({ ...form, description: event.target.value }))} placeholder="Deskripsi karya, inovasi, atau praktik baik" rows={4} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" />
+                  <div className="grid gap-3 sm:grid-cols-2"><input type="url" value={portfolioForm.link} onChange={(event) => setPortfolioForm((form) => ({ ...form, link: event.target.value }))} placeholder="Tautan karya (opsional)" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input type="url" value={portfolioForm.photoUrl} onChange={(event) => setPortfolioForm((form) => ({ ...form, photoUrl: event.target.value }))} placeholder="Tautan gambar (opsional)" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div>
+                  <Button type="submit" className="w-full font-extrabold" disabled={savingForm}>{savingForm ? "Mengirim..." : "Kirim portofolio"}</Button>
+                </form>
               </div>
             </>
           ) : null}
@@ -432,7 +531,15 @@ export function DashboardAnggotaPage() {
               <DialogHeader><DialogTitle>Berita yang dibagikan</DialogTitle><DialogDescription>Informasi dan kegiatan yang dibuat menggunakan akun ini.</DialogDescription></DialogHeader>
               <div className="space-y-3 px-6 pb-6">
                 {myNews.length ? myNews.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="font-extrabold text-slate-900 dark:text-white">{item.title}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.category} · {formatDate(item.date)}</div><div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.summary || "Belum ada ringkasan berita."}</div><div className="mt-3"><Badge variant={item.publishStatus === "approved" ? "success" : "default"}>{item.publishStatus}</Badge></div></div>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada berita yang dibagikan.</div>}
-                <Button asChild className="w-full font-extrabold"><Link to="/berita" onClick={() => setOpenModal(null)}>Tambah berita</Link></Button>
+                <form className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-400/20 dark:bg-blue-500/10" onSubmit={(event) => { event.preventDefault(); void saveNews(); }}>
+                  <div className="text-sm font-extrabold text-slate-800 dark:text-white">Tulis berita</div>
+                  <div className="grid gap-3 sm:grid-cols-2"><input required minLength={3} value={newsForm.title} onChange={(event) => setNewsForm((form) => ({ ...form, title: event.target.value }))} placeholder="Judul berita" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input value={newsForm.category} onChange={(event) => setNewsForm((form) => ({ ...form, category: event.target.value }))} placeholder="Kategori" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div>
+                  <div className="grid gap-3 sm:grid-cols-2"><input type="date" required value={newsForm.date} onChange={(event) => setNewsForm((form) => ({ ...form, date: event.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input type="url" value={newsForm.imageUrl} onChange={(event) => setNewsForm((form) => ({ ...form, imageUrl: event.target.value }))} placeholder="Tautan gambar (opsional)" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div>
+                  <input required minLength={10} value={newsForm.summary} onChange={(event) => setNewsForm((form) => ({ ...form, summary: event.target.value }))} placeholder="Ringkasan berita" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" />
+                  <textarea required minLength={10} value={newsForm.content} onChange={(event) => setNewsForm((form) => ({ ...form, content: event.target.value }))} placeholder="Isi berita" rows={5} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" />
+                  <input type="url" value={newsForm.documentUrl} onChange={(event) => setNewsForm((form) => ({ ...form, documentUrl: event.target.value }))} placeholder="Tautan dokumen (opsional)" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" />
+                  <Button type="submit" className="w-full font-extrabold" disabled={savingForm}>{savingForm ? "Mengirim..." : "Kirim berita"}</Button>
+                </form>
               </div>
             </>
           ) : null}
@@ -440,7 +547,7 @@ export function DashboardAnggotaPage() {
           {openModal === "learning" ? (
             <>
               <DialogHeader><DialogTitle>Bank Pembelajaran</DialogTitle><DialogDescription>Ruang berbagi modul ajar dan praktik baik untuk anggota MGMP.</DialogDescription></DialogHeader>
-              <div className="space-y-4 px-6 pb-6"><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 dark:border-blue-400/20 dark:bg-blue-500/10"><BookOpen className="h-6 w-6 text-mgmp-primary dark:text-blue-300" /><div className="mt-3 font-extrabold text-slate-900 dark:text-white">Belajar dan berbagi bersama</div><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Temukan modul ajar, materi pembelajaran, asesmen, bank soal, dan praktik baik yang dapat digunakan bersama.</p></div><Button asChild className="w-full font-extrabold"><Link to="/bank-pembelajaran" onClick={() => setOpenModal(null)}>Bagikan materi</Link></Button></div>
+              <form className="space-y-3 px-6 pb-6" onSubmit={(event) => { event.preventDefault(); void saveLearningResource(); }}><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 dark:border-blue-400/20 dark:bg-blue-500/10"><BookOpen className="h-6 w-6 text-mgmp-primary dark:text-blue-300" /><div className="mt-3 font-extrabold text-slate-900 dark:text-white">Bagikan materi</div><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Isi informasi materi dan tautan yang dapat dibuka oleh anggota MGMP. Kiriman akan diperiksa sebelum dipublikasikan.</p></div><input required minLength={3} value={learningForm.title} onChange={(event) => setLearningForm((form) => ({ ...form, title: event.target.value }))} placeholder="Judul materi" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><div className="grid gap-3 sm:grid-cols-2"><select value={learningForm.category} onChange={(event) => setLearningForm((form) => ({ ...form, category: event.target.value as (typeof learningCategories)[number] }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white">{learningCategories.map((category) => <option key={category}>{category}</option>)}</select><input required value={learningForm.phase} onChange={(event) => setLearningForm((form) => ({ ...form, phase: event.target.value }))} placeholder="Fase" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div><div className="grid gap-3 sm:grid-cols-2"><input required value={learningForm.grade} onChange={(event) => setLearningForm((form) => ({ ...form, grade: event.target.value }))} placeholder="Kelas" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input required minLength={2} value={learningForm.topic} onChange={(event) => setLearningForm((form) => ({ ...form, topic: event.target.value }))} placeholder="Topik" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div><textarea required minLength={10} value={learningForm.description} onChange={(event) => setLearningForm((form) => ({ ...form, description: event.target.value }))} placeholder="Deskripsi materi" rows={4} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input required type="url" value={learningForm.resourceUrl} onChange={(event) => setLearningForm((form) => ({ ...form, resourceUrl: event.target.value }))} placeholder="Tautan materi (https://...)" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><div className="grid gap-3 sm:grid-cols-2"><input required value={learningForm.semester} onChange={(event) => setLearningForm((form) => ({ ...form, semester: event.target.value }))} placeholder="Semester" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input value={learningForm.tags} onChange={(event) => setLearningForm((form) => ({ ...form, tags: event.target.value }))} placeholder="Tag, pisahkan dengan koma" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div><Button type="submit" className="w-full font-extrabold" disabled={savingForm}>{savingForm ? "Mengirim..." : "Kirim materi"}</Button></form>
             </>
           ) : null}
 

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Activity, Archive, ArrowLeft, BarChart3, Check, Clock3, Download, FileText, LayoutGrid, Link2, Quote, Search, Shield, Trophy, Trash2, User, Users, X } from "lucide-react";
+import { Activity, Archive, ArrowLeft, BarChart3, Check, Clock3, Download, FileText, LayoutGrid, Link2, MessageSquare, Quote, Search, Shield, Trophy, Trash2, User, Users, X } from "lucide-react";
 import { api } from "@/api/client";
-import type { BoardMember, HomeContent, Member, MemberRole, MembershipStatus } from "@/types";
+import type { BoardMember, FeedbackEntry, HomeContent, Member, MemberRole, MembershipStatus, Testimonial } from "@/types";
 import { useAppData } from "@/state/AppDataContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,7 @@ function statusVariant(status: MembershipStatus) {
   return "accent";
 }
 
-type AdminSection = "home" | "role-manager" | "susunan-pengurus" | "konten-beranda" | "bank-operasional" | "aktivitas-anggota";
+type AdminSection = "home" | "role-manager" | "susunan-pengurus" | "konten-beranda" | "bank-operasional" | "aktivitas-anggota" | "masukan";
 type BankOperations = {
   overview: { total: number; approved: number; pending: number; rejected: number; archived: number; files: number; links: number; views: number; downloads: number; openReports: number; staleLinks: number; brokenLinks: number };
   byCategory: Array<{ category: string; count: number }>;
@@ -47,6 +47,7 @@ function detectSection(pathname: string): AdminSection {
   if (pathname.endsWith("/konten-beranda")) return "konten-beranda";
   if (pathname.endsWith("/bank-operasional")) return "bank-operasional";
   if (pathname.endsWith("/aktivitas-anggota")) return "aktivitas-anggota";
+  if (pathname.endsWith("/masukan")) return "masukan";
   return "home";
 }
 
@@ -69,6 +70,9 @@ export function DashboardAdminPage() {
   const [activityPeriod, setActivityPeriod] = useState<"7" | "30" | "all">("30");
   const [memberActivity, setMemberActivity] = useState<MemberActivity[]>([]);
   const [loadingMemberActivity, setLoadingMemberActivity] = useState(false);
+  const [feedbackItems, setFeedbackItems] = useState<FeedbackEntry[]>([]);
+  const [testimonialItems, setTestimonialItems] = useState<Testimonial[]>([]);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -176,6 +180,41 @@ export function DashboardAdminPage() {
       .finally(() => { if (!cancelled) setLoadingMemberActivity(false); });
     return () => { cancelled = true; };
   }, [activityPeriod, section]);
+
+  useEffect(() => {
+    if (section !== "masukan") return;
+    let cancelled = false;
+    setLoadingFeedback(true);
+    void Promise.all([
+      api<FeedbackEntry[]>("/api/admin/feedback?status=pending"),
+      api<Testimonial[]>("/api/admin/testimonials?status=pending")
+    ]).then(([feedback, testimonials]) => {
+      if (cancelled) return;
+      setFeedbackItems(feedback);
+      setTestimonialItems(testimonials);
+    }).catch(() => {
+      if (!cancelled) { setFeedbackItems([]); setTestimonialItems([]); }
+    }).finally(() => { if (!cancelled) setLoadingFeedback(false); });
+    return () => { cancelled = true; };
+  }, [section]);
+
+  async function updateFeedback(id: number, status: "approved" | "rejected") {
+    try {
+      await api(`/api/admin/feedback/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
+      setFeedbackItems((items) => items.filter((item) => item.id !== id));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Gagal memperbarui masukan.");
+    }
+  }
+
+  async function updateTestimonial(id: number, status: "approved" | "rejected") {
+    try {
+      await api(`/api/admin/testimonials/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
+      setTestimonialItems((items) => items.filter((item) => item.id !== id));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Gagal memperbarui testimoni.");
+    }
+  }
 
   function updateBoardRow(index: number, key: "memberId" | "title" | "contact", value: string | number) {
     setBoard((prev) => prev.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
@@ -291,6 +330,15 @@ export function DashboardAdminPage() {
             </Link>
           </Card>
           <Card asChild className="rounded-2xl">
+            <Link to="/dashboard/admin/masukan">
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle className="text-mgmp-blue dark:text-white">Kritik & Testimoni</CardTitle>
+                <MessageSquare className="h-5 w-5 text-violet-500" />
+              </CardHeader>
+              <CardContent className="text-sm text-slate-500 dark:text-slate-400">Tinjau masukan publik dan testimoni sebelum ditampilkan.</CardContent>
+            </Link>
+          </Card>
+          <Card asChild className="rounded-2xl">
             <Link to="/dashboard/admin/aktivitas-anggota">
               <CardHeader className="flex-row items-center justify-between">
                 <CardTitle className="text-mgmp-blue dark:text-white">Aktivitas Anggota</CardTitle>
@@ -340,7 +388,7 @@ export function DashboardAdminPage() {
           </Link>
         </Button>
         <h1 className="text-2xl font-extrabold text-mgmp-blue dark:text-white">
-          {section === "role-manager" ? "Role Manager" : section === "susunan-pengurus" ? "Susunan Pengurus" : section === "konten-beranda" ? "Konten Beranda" : section === "bank-operasional" ? "Operasional Bank Pembelajaran" : "Aktivitas Anggota"}
+          {section === "role-manager" ? "Role Manager" : section === "susunan-pengurus" ? "Susunan Pengurus" : section === "konten-beranda" ? "Konten Beranda" : section === "bank-operasional" ? "Operasional Bank Pembelajaran" : section === "masukan" ? "Kritik, Saran & Testimoni" : "Aktivitas Anggota"}
         </h1>
       </div>
 
@@ -543,6 +591,13 @@ export function DashboardAdminPage() {
             <Card><CardHeader><CardTitle className="text-mgmp-blue dark:text-white">Materi Terpopuler</CardTitle></CardHeader><CardContent className="space-y-3">{bankOperations.topResources.length ? bankOperations.topResources.map((item) => <Link key={item.id} to={`/bank-pembelajaran/${item.id}`} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1 hover:bg-slate-100 dark:hover:bg-white/5"><div className="min-w-0"><div className="truncate text-sm font-bold text-slate-800 dark:text-white">{item.title}</div><div className="text-xs text-slate-500">{item.category}</div></div><div className="shrink-0 text-xs font-semibold text-slate-500">{item.viewCount} lihat · {item.downloadCount} buka</div></Link>) : <div className="text-sm text-slate-500">Belum ada materi dipublikasikan.</div>}</CardContent></Card>
           </div>
           <Card><CardHeader><CardTitle className="text-mgmp-blue dark:text-white">Laporan Terbuka</CardTitle></CardHeader><CardContent className="space-y-3">{bankOperations.openReports.length ? bankOperations.openReports.map((report) => <div key={report.id} className="rounded-lg border border-slate-200/70 p-3 dark:border-white/10"><div className="text-sm font-bold text-slate-800 dark:text-white">Materi #{report.resourceId}: {report.reason}</div>{report.detail ? <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{report.detail}</div> : null}</div>) : <div className="text-sm text-slate-500">Tidak ada laporan terbuka.</div>}<Button asChild variant="secondary" size="sm"><Link to="/dashboard/pengurus">Tindak lanjuti di dashboard pengurus</Link></Button></CardContent></Card>
+        </div>
+      ) : null}
+
+      {section === "masukan" ? (
+        loadingFeedback ? <div className="grid gap-4 md:grid-cols-2"><div className="h-40 animate-pulse rounded-2xl bg-slate-100 dark:bg-white/5" /><div className="h-40 animate-pulse rounded-2xl bg-slate-100 dark:bg-white/5" /></div> : <div className="grid gap-5 lg:grid-cols-2">
+          <Card className="rounded-2xl"><CardHeader><CardTitle className="text-mgmp-blue dark:text-white">Masukan publik</CardTitle></CardHeader><CardContent className="space-y-3">{feedbackItems.length ? feedbackItems.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="flex items-start justify-between gap-3"><div><Badge variant="primary">{item.kind}</Badge><div className="mt-2 text-sm font-extrabold text-slate-900 dark:text-white">{item.name || "Anonim"}</div></div><div className="flex gap-2"><Button size="sm" onClick={() => void updateFeedback(item.id, "approved")}><Check className="h-4 w-4" />Setujui</Button><Button size="sm" variant="secondary" onClick={() => void updateFeedback(item.id, "rejected")}><X className="h-4 w-4" />Tolak</Button></div></div><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.message}</p></div>) : <div className="py-8 text-center text-sm text-slate-500">Tidak ada masukan yang menunggu tinjauan.</div>}</CardContent></Card>
+          <Card className="rounded-2xl"><CardHeader><CardTitle className="text-mgmp-blue dark:text-white">Testimoni publik</CardTitle></CardHeader><CardContent className="space-y-3">{testimonialItems.length ? testimonialItems.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-extrabold text-slate-900 dark:text-white">{item.name}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{[item.role, item.institution].filter(Boolean).join(" · ")}</div></div><div className="flex gap-2"><Button size="sm" onClick={() => void updateTestimonial(item.id, "approved")}><Check className="h-4 w-4" />Setujui</Button><Button size="sm" variant="secondary" onClick={() => void updateTestimonial(item.id, "rejected")}><X className="h-4 w-4" />Tolak</Button></div></div><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.content}</p></div>) : <div className="py-8 text-center text-sm text-slate-500">Tidak ada testimoni yang menunggu tinjauan.</div>}</CardContent></Card>
         </div>
       ) : null}
 

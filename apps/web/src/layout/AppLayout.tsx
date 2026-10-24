@@ -1,5 +1,5 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { BookOpen, CalendarDays, Laptop2, Newspaper, Users, User, Shield, AlertCircle, Bell, LogOut } from "lucide-react";
+import { BookOpen, CalendarDays, Laptop2, MessageSquare, Newspaper, Users, User, Shield, AlertCircle, Bell, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Heart, MapPin, Mail, Instagram, Facebook, Youtube } from "lucide-react";
@@ -330,13 +330,14 @@ export function AppLayout() {
       </header> : null}
 
       {!isMemberHome ? <nav className="fixed bottom-0 left-0 z-40 w-full h-16 md:hidden border-t border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#0b1220]/80 backdrop-blur">
-        <div className={["grid h-full text-[10px] font-extrabold", showAdminBottomItem ? "grid-cols-7" : "grid-cols-6"].join(" ")}>
+        <div className={["grid h-full text-[10px] font-extrabold", showAdminBottomItem ? "grid-cols-8" : "grid-cols-7"].join(" ")}>
           <BottomItem to="/" label="Beranda" Icon={CalendarDays} />
           <BottomItem to="/profil" label="Profil" Icon={User} />
           <BottomItem to="/anggota" label="Anggota" Icon={Users} />
           <BottomItem to="/berita" label="Berita" Icon={Newspaper} />
           <BottomItem to="/portofolio" label="Karya" Icon={Laptop2} />
           <BottomItem to="/bank-pembelajaran" label="Bank" Icon={BookOpen} />
+          <BottomItem to="/kritik-saran" label="Masukan" Icon={MessageSquare} />
           {showAdminBottomItem ? <BottomItem to="/dashboard/admin" label="Admin" Icon={Shield} /> : null}
         </div>
       </nav> : null}
@@ -461,6 +462,12 @@ export function AppLayout() {
                 </Link>
                 <Link className="block hover:text-white transition" to="/berita">
                   Berita Kedinasan
+                </Link>
+                <Link className="block hover:text-white transition" to="/kritik-saran">
+                  Kritik & Saran
+                </Link>
+                <Link className="block hover:text-white transition" to="/testimoni">
+                  Testimoni
                 </Link>
               </div>
             </div>

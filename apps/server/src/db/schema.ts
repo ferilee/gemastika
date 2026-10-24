@@ -93,6 +93,32 @@ export const portfolios = sqliteTable("portfolios", {
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
 });
 
+export const feedbackEntries = sqliteTable("feedback_entries", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+  kind: text("kind", { enum: ["kritik", "saran", "masukan"] }).notNull().default("masukan"),
+  name: text("name").notNull().default("Anonim"),
+  email: text("email").notNull().default(""),
+  message: text("message").notNull(),
+  status: text("status", { enum: ["pending", "approved", "rejected"] }).notNull().default("pending"),
+  reviewedBy: text("reviewed_by").notNull().default(""),
+  reviewedAt: text("reviewed_at").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+});
+
+export const testimonials = sqliteTable("testimonials", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  role: text("role").notNull().default(""),
+  institution: text("institution").notNull().default(""),
+  content: text("content").notNull(),
+  photoUrl: text("photo_url").notNull().default(""),
+  consent: integer("consent", { mode: "number" }).notNull().default(0),
+  status: text("status", { enum: ["pending", "approved", "rejected"] }).notNull().default("pending"),
+  reviewedBy: text("reviewed_by").notNull().default(""),
+  reviewedAt: text("reviewed_at").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
+});
+
 export const learningResources = sqliteTable("learning_resources", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   title: text("title").notNull(),

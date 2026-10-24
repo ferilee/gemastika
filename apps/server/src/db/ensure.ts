@@ -109,6 +109,36 @@ export async function ensureRuntimeSchema(db: Db) {
   `);
 
   await db.run(sql`
+    CREATE TABLE IF NOT EXISTS feedback_entries (
+      id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+      kind text NOT NULL DEFAULT 'masukan',
+      name text NOT NULL DEFAULT 'Anonim',
+      email text NOT NULL DEFAULT '',
+      message text NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      reviewed_by text NOT NULL DEFAULT '',
+      reviewed_at text NOT NULL DEFAULT '',
+      created_at text NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  await db.run(sql`
+    CREATE TABLE IF NOT EXISTS testimonials (
+      id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+      name text NOT NULL,
+      role text NOT NULL DEFAULT '',
+      institution text NOT NULL DEFAULT '',
+      content text NOT NULL,
+      photo_url text NOT NULL DEFAULT '',
+      consent integer NOT NULL DEFAULT 0,
+      status text NOT NULL DEFAULT 'pending',
+      reviewed_by text NOT NULL DEFAULT '',
+      reviewed_at text NOT NULL DEFAULT '',
+      created_at text NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  await db.run(sql`
     INSERT INTO home_quick_links (title, subtitle, href, sort_order)
     SELECT 'Modul Ajar Fase E', 'Logaritma & Eksponen', '/portofolio', 1
     WHERE NOT EXISTS (SELECT 1 FROM home_quick_links)

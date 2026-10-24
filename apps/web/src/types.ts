@@ -60,6 +60,32 @@ export type Portfolio = {
   reviewedAt: string;
 };
 
+export type FeedbackEntry = {
+  id: number;
+  kind: "kritik" | "saran" | "masukan";
+  name: string;
+  email: string;
+  message: string;
+  status: "pending" | "approved" | "rejected";
+  reviewedBy: string;
+  reviewedAt: string;
+  createdAt: string;
+};
+
+export type Testimonial = {
+  id: number;
+  name: string;
+  role: string;
+  institution: string;
+  content: string;
+  photoUrl: string;
+  consent: number;
+  status: "pending" | "approved" | "rejected";
+  reviewedBy: string;
+  reviewedAt: string;
+  createdAt: string;
+};
+
 export type LearningResourceCategory = "RPP / Modul Ajar" | "Materi Pembelajaran" | "Asesmen Interaktif" | "LKPD Interaktif" | "Bank Soal" | "Media Pembelajaran" | "Praktik Baik" | "Perangkat Administrasi";
 
 export type LearningResource = {

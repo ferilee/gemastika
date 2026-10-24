@@ -9,6 +9,7 @@ import {
   attendances,
   boardMembers,
   comments,
+  feedbackEntries,
   homeQuickLinks,
   homeSettings,
   learningResourceCollectionItems,
@@ -24,6 +25,7 @@ import {
   portfolioRatings,
   portfolios,
   reactions,
+  testimonials,
   userNotifications
 } from "../db/schema";
 import { getSession } from "../auth/session";
@@ -918,6 +920,93 @@ export function apiRouter(db: Db) {
     if (!existing) return c.json({ ok: true });
     await db.update(members).set({ newMemberBadgeSeen: 1 }).where(eq(members.id, existing.id));
     return c.json({ ok: true });
+  });
+
+  api.get("/feedback", async (c) => {
+    const rows = await db.select().from(feedbackEntries).where(eq(feedbackEntries.status, "approved")).orderBy(desc(feedbackEntries.id)).limit(50);
+    return c.json(rows);
+  });
+
+  api.post(
+    "/feedback",
+    zValidator("json", z.object({
+      kind: z.enum(["kritik", "saran", "masukan"]),
+      name: z.string().trim().min(2).max(100).default("Anonim"),
+      email: z.string().trim().email().or(z.literal("")).default(""),
+      message: z.string().trim().min(10).max(3000),
+      website: z.string().max(200).default("")
+    })),
+    async (c) => {
+      const body = c.req.valid("json");
+      if (body.website) return c.json({ ok: true }, 201);
+      const [created] = await db.insert(feedbackEntries).values({ kind: body.kind, name: body.name || "Anonim", email: body.email, message: body.message }).returning();
+      return c.json(created, 201);
+    }
+  );
+
+  api.get("/testimonials", async (c) => {
+    const rows = await db.select().from(testimonials).where(eq(testimonials.status, "approved")).orderBy(desc(testimonials.id)).limit(50);
+    return c.json(rows);
+  });
+
+  api.post(
+    "/testimonials",
+    zValidator("json", z.object({
+      name: z.string().trim().min(2).max(100),
+      role: z.string().trim().max(100).default(""),
+      institution: z.string().trim().max(160).default(""),
+      content: z.string().trim().min(10).max(2000),
+      photoUrl: z.string().url().or(z.literal("")).default(""),
+      consent: z.boolean(),
+      website: z.string().max(200).default("")
+    })),
+    async (c) => {
+      const body = c.req.valid("json");
+      if (body.website) return c.json({ ok: true }, 201);
+      if (!body.consent) return c.json({ error: "Persetujuan publikasi diperlukan." }, 400);
+      const [created] = await db.insert(testimonials).values({ name: body.name, role: body.role, institution: body.institution, content: body.content, photoUrl: body.photoUrl, consent: 1 }).returning();
+      return c.json(created, 201);
+    }
+  );
+
+  api.get("/admin/feedback", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const status = c.req.query("status");
+    const rows = await db.select().from(feedbackEntries).where(status && status !== "all" ? eq(feedbackEntries.status, status as "pending" | "approved" | "rejected") : undefined).orderBy(desc(feedbackEntries.id)).limit(100);
+    return c.json(rows);
+  });
+
+  api.post("/admin/feedback/:id/status", zValidator("json", z.object({ status: z.enum(["approved", "rejected"]) })), async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const id = Number(c.req.param("id"));
+    const [updated] = await db.update(feedbackEntries).set({ status: c.req.valid("json").status, reviewedBy: session.email || session.name || "", reviewedAt: new Date().toISOString() }).where(eq(feedbackEntries.id, id)).returning();
+    return updated ? c.json(updated) : c.json({ error: "Not found" }, 404);
+  });
+
+  api.get("/admin/testimonials", async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const status = c.req.query("status");
+    const rows = await db.select().from(testimonials).where(status && status !== "all" ? eq(testimonials.status, status as "pending" | "approved" | "rejected") : undefined).orderBy(desc(testimonials.id)).limit(100);
+    return c.json(rows);
+  });
+
+  api.post("/admin/testimonials/:id/status", zValidator("json", z.object({ status: z.enum(["approved", "rejected"]) })), async (c) => {
+    const env = getEnv();
+    const session = await getSession(c, env.sessionSecret);
+    const roles = (session?.roles?.length ? session.roles : session?.role ? [session.role] : []) as RoleValue[];
+    if (!session || !isReviewer(roles)) return c.json({ error: "Forbidden" }, 403);
+    const id = Number(c.req.param("id"));
+    const [updated] = await db.update(testimonials).set({ status: c.req.valid("json").status, reviewedBy: session.email || session.name || "", reviewedAt: new Date().toISOString() }).where(eq(testimonials.id, id)).returning();
+    return updated ? c.json(updated) : c.json({ error: "Not found" }, 404);
   });
 
   api.get("/schools", async (c) => {
