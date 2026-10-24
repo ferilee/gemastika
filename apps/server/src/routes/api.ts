@@ -174,6 +174,16 @@ function isReviewer(roles: RoleValue[]) {
   return roles.includes("admin") || roles.includes("pengurus");
 }
 
+function attendanceWindowState(openAt: string, closeAt: string, now = new Date()) {
+  if (!openAt || !closeAt) return "not_configured" as const;
+  const open = new Date(openAt);
+  const close = new Date(closeAt);
+  if (Number.isNaN(open.getTime()) || Number.isNaN(close.getTime()) || close.getTime() <= open.getTime()) return "not_configured" as const;
+  if (now.getTime() < open.getTime()) return "not_open" as const;
+  if (now.getTime() > close.getTime()) return "closed" as const;
+  return "open" as const;
+}
+
 function dailySeed(value: string) {
   return [...value].reduce((seed, char) => ((seed * 31) + char.charCodeAt(0)) >>> 0, 7);
 }
@@ -959,6 +969,8 @@ export function apiRouter(db: Db) {
         title: z.string().min(3),
         date: z.string().min(10),
         time: z.string().trim().default(""),
+        attendanceOpenAt: z.string().trim().default(""),
+        attendanceCloseAt: z.string().trim().default(""),
         location: z.string().trim().default(""),
         description: z.string().trim().default("")
       })
@@ -967,7 +979,7 @@ export function apiRouter(db: Db) {
       const env = getEnv();
       const session = await getSession(c, env.sessionSecret);
       const sessionRoles = parseRoles((session?.roles || []).join(",") || session?.role || "anggota");
-      if (!session || !hasRole(sessionRoles, "admin")) return c.json({ error: "Forbidden" }, 403);
+      if (!session || !isReviewer(sessionRoles)) return c.json({ error: "Forbidden" }, 403);
 
       const body = c.req.valid("json");
       const [inserted] = await db.insert(agendas).values(body).returning();
@@ -983,6 +995,8 @@ export function apiRouter(db: Db) {
         title: z.string().min(3),
         date: z.string().min(10),
         time: z.string().trim().default(""),
+        attendanceOpenAt: z.string().trim().default(""),
+        attendanceCloseAt: z.string().trim().default(""),
         location: z.string().trim().default(""),
         description: z.string().trim().default("")
       })
@@ -991,7 +1005,7 @@ export function apiRouter(db: Db) {
       const env = getEnv();
       const session = await getSession(c, env.sessionSecret);
       const sessionRoles = parseRoles((session?.roles || []).join(",") || session?.role || "anggota");
-      if (!session || !hasRole(sessionRoles, "admin")) return c.json({ error: "Forbidden" }, 403);
+      if (!session || !isReviewer(sessionRoles)) return c.json({ error: "Forbidden" }, 403);
 
       const id = Number(c.req.param("id"));
       const body = c.req.valid("json");
@@ -1006,7 +1020,7 @@ export function apiRouter(db: Db) {
     const env = getEnv();
     const session = await getSession(c, env.sessionSecret);
     const sessionRoles = parseRoles((session?.roles || []).join(",") || session?.role || "anggota");
-    if (!session || !hasRole(sessionRoles, "admin")) return c.json({ error: "Forbidden" }, 403);
+    if (!session || !isReviewer(sessionRoles)) return c.json({ error: "Forbidden" }, 403);
 
     const id = Number(c.req.param("id"));
     await db.delete(agendas).where(eq(agendas.id, id));
@@ -1117,8 +1131,19 @@ export function apiRouter(db: Db) {
       }
 
       // Ensure agenda and member exist (fast checks).
-      const agenda = await db.select({ id: agendas.id }).from(agendas).where(eq(agendas.id, agendaId)).get();
+      const agenda = await db
+        .select({ id: agendas.id, attendanceOpenAt: agendas.attendanceOpenAt, attendanceCloseAt: agendas.attendanceCloseAt })
+        .from(agendas)
+        .where(eq(agendas.id, agendaId))
+        .get();
       if (!agenda) return c.json({ error: "Agenda not found" }, 404);
+      if (!canManageAttendance) {
+        const windowState = attendanceWindowState(agenda.attendanceOpenAt, agenda.attendanceCloseAt);
+        if (windowState !== "open") {
+          const error = windowState === "not_open" ? "Presensi belum dibuka." : windowState === "closed" ? "Presensi sudah ditutup." : "Presensi belum diatur oleh admin/pengurus.";
+          return c.json({ error, code: `attendance_${windowState}` }, 403);
+        }
+      }
       const member = await db.select({ id: members.id, xp: members.xp }).from(members).where(eq(members.id, memberId)).get();
       if (!member) return c.json({ error: "Member not found" }, 404);
 

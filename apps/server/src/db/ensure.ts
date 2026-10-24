@@ -9,6 +9,15 @@ export async function ensureRuntimeSchema(db: Db) {
   const rows = (await db.all(sql`PRAGMA table_info(members)`)) as TableInfoRow[];
   const columns = new Set(rows.map((row) => row.name));
 
+  const agendaRows = (await db.all(sql`PRAGMA table_info(agendas)`)) as TableInfoRow[];
+  const agendaColumns = new Set(agendaRows.map((row) => row.name));
+  if (!agendaColumns.has("attendance_open_at")) {
+    await db.run(sql`ALTER TABLE agendas ADD attendance_open_at text DEFAULT '' NOT NULL`);
+  }
+  if (!agendaColumns.has("attendance_close_at")) {
+    await db.run(sql`ALTER TABLE agendas ADD attendance_close_at text DEFAULT '' NOT NULL`);
+  }
+
   if (!columns.has("role")) {
     await db.run(sql`ALTER TABLE members ADD role text DEFAULT 'anggota' NOT NULL`);
   }

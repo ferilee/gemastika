@@ -17,10 +17,12 @@ import {
   ShieldCheck,
   Trophy,
   User,
+  UserCheck,
   X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
+import { api } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -95,6 +97,9 @@ export function DashboardAnggotaPage() {
   const { members, agendas, news, portfolios } = useAppData();
   const [currentStep, setCurrentStep] = useState(0);
   const [openModal, setOpenModal] = useState<MemberModal>(null);
+  const [attendanceStatus, setAttendanceStatus] = useState<Record<number, boolean>>({});
+  const [savingAttendanceId, setSavingAttendanceId] = useState<number | null>(null);
+  const [attendanceNotice, setAttendanceNotice] = useState("");
   const storageKey = `mgmp-dashboard-step:${user?.email || user?.sub || "guest"}`;
 
   const memberEmail = (user?.email || "").trim().toLowerCase();
@@ -125,6 +130,48 @@ export function DashboardAnggotaPage() {
   const knowledgeNote = totalContributions > 0
     ? `Anda sudah membagikan ${totalContributions} kontribusi. Terima kasih sudah menghidupkan ruang berbagi MGMP.`
     : "Satu karya atau berita yang Anda bagikan dapat membantu anggota lain belajar lebih cepat.";
+
+  function attendanceState(agenda: typeof agendas[number]) {
+    if (!agenda.attendanceOpenAt || !agenda.attendanceCloseAt) return "not_configured" as const;
+    const open = new Date(agenda.attendanceOpenAt).getTime();
+    const close = new Date(agenda.attendanceCloseAt).getTime();
+    const now = Date.now();
+    if (!Number.isFinite(open) || !Number.isFinite(close) || close <= open) return "not_configured" as const;
+    if (now < open) return "not_open" as const;
+    if (now > close) return "closed" as const;
+    return "open" as const;
+  }
+
+  async function markAttendance(agendaId: number) {
+    if (!currentMember || savingAttendanceId) return;
+    setSavingAttendanceId(agendaId);
+    setAttendanceNotice("");
+    try {
+      const result = await api<{ already: boolean; attendance?: { xpAwarded: number } }>(`/api/agendas/${agendaId}/attendance`, { method: "POST", body: JSON.stringify({}) });
+      setAttendanceStatus((items) => ({ ...items, [agendaId]: true }));
+      setAttendanceNotice(result.already ? "Kehadiran Anda sudah tercatat sebelumnya." : `Kehadiran berhasil dicatat. XP +${result.attendance?.xpAwarded ?? 10}.`);
+    } catch (error) {
+      setAttendanceNotice(error instanceof Error ? error.message : "Kehadiran belum dapat dicatat.");
+    } finally {
+      setSavingAttendanceId(null);
+    }
+  }
+
+  useEffect(() => {
+    if (openModal !== "agenda" || !currentMember || !upcomingAgendas.length) return;
+    let cancelled = false;
+    void Promise.all(upcomingAgendas.map(async (agenda) => {
+      try {
+        const rows = await api<Array<{ memberId: number }>>(`/api/agendas/${agenda.id}/attendance`);
+        return [agenda.id, rows.some((row) => row.memberId === currentMember.id)] as const;
+      } catch {
+        return [agenda.id, false] as const;
+      }
+    })).then((entries) => {
+      if (!cancelled) setAttendanceStatus((items) => ({ ...items, ...Object.fromEntries(entries) }));
+    });
+    return () => { cancelled = true; };
+  }, [currentMember, openModal, upcomingAgendas]);
 
   useEffect(() => {
     try {
@@ -330,7 +377,7 @@ export function DashboardAnggotaPage() {
                   <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><Phone className="h-4 w-4" /> WhatsApp</div><div className="mt-1 text-sm font-bold text-slate-800 dark:text-white">{currentMember?.wa || "-"}</div></div>
                   <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><ShieldCheck className="h-4 w-4" /> XP saat ini</div><div className="mt-1 text-sm font-bold text-slate-800 dark:text-white">{currentMember?.xp || 0} XP</div></div>
                 </div>
-                <Button asChild className="w-full font-extrabold"><Link to="/profil" onClick={() => setOpenModal(null)}>Buka halaman profil</Link></Button>
+                <Button asChild className="w-full font-extrabold"><Link to="/profil" onClick={() => setOpenModal(null)}>Edit profil</Link></Button>
               </div>
             </>
           ) : null}
@@ -349,7 +396,14 @@ export function DashboardAnggotaPage() {
             <>
               <DialogHeader><DialogTitle>Agenda mendatang</DialogTitle><DialogDescription>Kegiatan yang masih dapat Anda ikuti.</DialogDescription></DialogHeader>
               <div className="space-y-3 px-6 pb-6">
-                {upcomingAgendas.length ? upcomingAgendas.slice(0, 8).map((agenda) => <div key={agenda.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="font-extrabold text-slate-900 dark:text-white">{agenda.title}</div><div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400"><span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" /> {formatDate(agenda.date)}</span><span className="inline-flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" /> {agenda.time || "Waktu belum ditentukan"}</span><span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {agenda.location || "Lokasi belum ditentukan"}</span></div></div>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada agenda mendatang.</div>}
+                {upcomingAgendas.length ? upcomingAgendas.slice(0, 8).map((agenda) => {
+                  const windowState = attendanceState(agenda);
+                  const marked = attendanceStatus[agenda.id] === true;
+                  const canAttend = windowState === "open" && !marked;
+                  const statusLabel = marked ? "Hadir tercatat" : windowState === "open" ? "Hadir" : windowState === "not_open" ? "Belum dibuka" : windowState === "closed" ? "Ditutup" : "Belum diatur";
+                  return <div key={agenda.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="flex items-start justify-between gap-3"><div className="font-extrabold text-slate-900 dark:text-white">{agenda.title}</div><Button size="sm" variant={marked ? "secondary" : "default"} disabled={!canAttend || savingAttendanceId === agenda.id} onClick={() => void markAttendance(agenda.id)}><UserCheck className="h-4 w-4" />{savingAttendanceId === agenda.id ? "Menyimpan..." : statusLabel}</Button></div><div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400"><span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" /> {formatDate(agenda.date)}</span><span className="inline-flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" /> {agenda.time || "Waktu belum ditentukan"}</span><span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {agenda.location || "Lokasi belum ditentukan"}</span></div></div>;
+                }) : <div className="py-8 text-center text-sm text-slate-500">Belum ada agenda mendatang.</div>}
+                {attendanceNotice ? <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-400/20 dark:bg-blue-500/10 dark:text-blue-100">{attendanceNotice}</div> : null}
               </div>
             </>
           ) : null}
@@ -368,6 +422,7 @@ export function DashboardAnggotaPage() {
               <DialogHeader><DialogTitle>Portofolio saya</DialogTitle><DialogDescription>Karya dan praktik baik yang dibuat menggunakan akun ini.</DialogDescription></DialogHeader>
               <div className="space-y-3 px-6 pb-6">
                 {myPortfolios.length ? myPortfolios.map((portfolio) => <div key={portfolio.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="font-extrabold text-slate-900 dark:text-white">{portfolio.title}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{portfolio.school || "Sekolah belum tercatat"}</div><div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{portfolio.description || "Belum ada deskripsi karya."}</div><div className="mt-3"><Badge variant={portfolio.publishStatus === "approved" ? "success" : "default"}>{portfolio.publishStatus}</Badge></div></div>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada karya di portofolio Anda.</div>}
+                <Button asChild className="w-full font-extrabold"><Link to="/portofolio" onClick={() => setOpenModal(null)}>Tambah portofolio</Link></Button>
               </div>
             </>
           ) : null}
@@ -377,6 +432,7 @@ export function DashboardAnggotaPage() {
               <DialogHeader><DialogTitle>Berita yang dibagikan</DialogTitle><DialogDescription>Informasi dan kegiatan yang dibuat menggunakan akun ini.</DialogDescription></DialogHeader>
               <div className="space-y-3 px-6 pb-6">
                 {myNews.length ? myNews.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-4 dark:border-white/10"><div className="font-extrabold text-slate-900 dark:text-white">{item.title}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.category} · {formatDate(item.date)}</div><div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.summary || "Belum ada ringkasan berita."}</div><div className="mt-3"><Badge variant={item.publishStatus === "approved" ? "success" : "default"}>{item.publishStatus}</Badge></div></div>) : <div className="py-8 text-center text-sm text-slate-500">Belum ada berita yang dibagikan.</div>}
+                <Button asChild className="w-full font-extrabold"><Link to="/berita" onClick={() => setOpenModal(null)}>Tambah berita</Link></Button>
               </div>
             </>
           ) : null}
@@ -384,7 +440,7 @@ export function DashboardAnggotaPage() {
           {openModal === "learning" ? (
             <>
               <DialogHeader><DialogTitle>Bank Pembelajaran</DialogTitle><DialogDescription>Ruang berbagi modul ajar dan praktik baik untuk anggota MGMP.</DialogDescription></DialogHeader>
-              <div className="space-y-4 px-6 pb-6"><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 dark:border-blue-400/20 dark:bg-blue-500/10"><BookOpen className="h-6 w-6 text-mgmp-primary dark:text-blue-300" /><div className="mt-3 font-extrabold text-slate-900 dark:text-white">Belajar dan berbagi bersama</div><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Temukan modul ajar, materi pembelajaran, asesmen, bank soal, dan praktik baik yang dapat digunakan bersama.</p></div><Button asChild className="w-full font-extrabold"><Link to="/bank-pembelajaran" onClick={() => setOpenModal(null)}>Buka Bank Pembelajaran</Link></Button></div>
+              <div className="space-y-4 px-6 pb-6"><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 dark:border-blue-400/20 dark:bg-blue-500/10"><BookOpen className="h-6 w-6 text-mgmp-primary dark:text-blue-300" /><div className="mt-3 font-extrabold text-slate-900 dark:text-white">Belajar dan berbagi bersama</div><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Temukan modul ajar, materi pembelajaran, asesmen, bank soal, dan praktik baik yang dapat digunakan bersama.</p></div><Button asChild className="w-full font-extrabold"><Link to="/bank-pembelajaran" onClick={() => setOpenModal(null)}>Bagikan materi</Link></Button></div>
             </>
           ) : null}
 

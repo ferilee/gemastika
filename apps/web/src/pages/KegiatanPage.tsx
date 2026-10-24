@@ -24,6 +24,20 @@ function schoolNameOnly(school: string) {
   return school.split(" - ")[0]?.trim() || school;
 }
 
+function toLocalDateTimeInput(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toStoredDateTime(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 const REPORT_LOGO_URL = "https://i.ibb.co.com/849tt9RT/Logo-MGMP-1-20260109-201844-0000.png";
 
 type AttendanceRow = {
@@ -62,6 +76,8 @@ export function KegiatanPage() {
   const [agendaTitle, setAgendaTitle] = useState("");
   const [agendaDate, setAgendaDate] = useState("");
   const [agendaTime, setAgendaTime] = useState("");
+  const [attendanceOpenAt, setAttendanceOpenAt] = useState("");
+  const [attendanceCloseAt, setAttendanceCloseAt] = useState("");
   const [agendaLocation, setAgendaLocation] = useState("");
   const [agendaDescription, setAgendaDescription] = useState("");
   const [savingAgenda, setSavingAgenda] = useState(false);
@@ -78,7 +94,7 @@ export function KegiatanPage() {
   const [earnedXp, setEarnedXp] = useState(0);
   const [alreadyMarked, setAlreadyMarked] = useState(false);
   const isAdminOrPengurus = hasRole(user, "admin") || hasRole(user, "pengurus");
-  const isAdmin = hasRole(user, "admin");
+  const canManageAgenda = isAdminOrPengurus;
   const selfMember = useMemo(() => {
     const email = (user?.email || "").trim().toLowerCase();
     if (!email) return null;
@@ -164,6 +180,8 @@ export function KegiatanPage() {
     setAgendaTitle("");
     setAgendaDate("");
     setAgendaTime("");
+    setAttendanceOpenAt("");
+    setAttendanceCloseAt("");
     setAgendaLocation("");
     setAgendaDescription("");
     setOpenForm(true);
@@ -176,6 +194,8 @@ export function KegiatanPage() {
     setAgendaTitle(found.title || "");
     setAgendaDate(found.date || "");
     setAgendaTime(found.time || "");
+    setAttendanceOpenAt(toLocalDateTimeInput(found.attendanceOpenAt || ""));
+    setAttendanceCloseAt(toLocalDateTimeInput(found.attendanceCloseAt || ""));
     setAgendaLocation(found.location || "");
     setAgendaDescription(found.description || "");
     setOpenForm(true);
@@ -189,6 +209,8 @@ export function KegiatanPage() {
         title: agendaTitle.trim(),
         date: agendaDate.trim(),
         time: agendaTime.trim(),
+        attendanceOpenAt: toStoredDateTime(attendanceOpenAt),
+        attendanceCloseAt: toStoredDateTime(attendanceCloseAt),
         location: agendaLocation.trim(),
         description: agendaDescription.trim()
       };
@@ -373,7 +395,7 @@ export function KegiatanPage() {
         <h1 className="text-2xl font-extrabold text-mgmp-blue dark:text-white">Kegiatan</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">Jadwal agenda lengkap kegiatan MGMP.</p>
       </div>
-      {isAdmin ? (
+      {canManageAgenda ? (
         <div className="flex justify-end">
           <Button onClick={openCreateAgenda} size="sm" className="font-extrabold">
             <Plus className="h-4 w-4" /> Tambah Kegiatan
@@ -478,7 +500,7 @@ export function KegiatanPage() {
                         {attendanceCountByAgenda[a.id] ?? 0}
                       </span>
                     </Button>
-                    {isAdmin ? (
+                    {canManageAgenda ? (
                       <>
                         <Button size="sm" variant="secondary" onClick={() => openEditAgenda(a.id)}>
                           <Pencil className="h-4 w-4" /> <span className="hidden sm:inline">Edit</span>
@@ -699,6 +721,14 @@ export function KegiatanPage() {
             </div>
             <Input placeholder="Lokasi kegiatan" value={agendaLocation} onChange={(e) => setAgendaLocation(e.target.value)} />
             <Input placeholder="Deskripsi singkat" value={agendaDescription} onChange={(e) => setAgendaDescription(e.target.value)} />
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-400/20 dark:bg-blue-500/10">
+              <div className="text-xs font-extrabold text-blue-800 dark:text-blue-200">Jendela presensi anggota</div>
+              <div className="mt-1 text-[11px] leading-5 text-blue-700 dark:text-blue-100">Tentukan kapan tombol Hadir dapat digunakan. Kosongkan jika presensi belum dibuka.</div>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Mulai presensi<Input className="mt-1" type="datetime-local" value={attendanceOpenAt} onChange={(e) => setAttendanceOpenAt(e.target.value)} /></label>
+                <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Tutup presensi<Input className="mt-1" type="datetime-local" value={attendanceCloseAt} onChange={(e) => setAttendanceCloseAt(e.target.value)} /></label>
+              </div>
+            </div>
             <Button disabled={savingAgenda || !agendaTitle.trim() || !agendaDate.trim()} onClick={() => void saveAgenda()} className="w-full">
               {savingAgenda ? "Menyimpan..." : "Simpan Kegiatan"}
             </Button>

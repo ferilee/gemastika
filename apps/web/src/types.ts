@@ -24,6 +24,8 @@ export type Agenda = {
   title: string;
   date: string;
   time: string;
+  attendanceOpenAt: string;
+  attendanceCloseAt: string;
   location: string;
   description: string;
 };

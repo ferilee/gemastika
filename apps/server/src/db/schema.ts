@@ -36,6 +36,8 @@ export const agendas = sqliteTable("agendas", {
   title: text("title").notNull(),
   date: text("date").notNull(), // ISO date, ex: 2026-04-08
   time: text("time").notNull().default(""),
+  attendanceOpenAt: text("attendance_open_at").notNull().default(""),
+  attendanceCloseAt: text("attendance_close_at").notNull().default(""),
   location: text("location").notNull().default(""),
   description: text("description").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`)
