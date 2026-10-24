@@ -813,16 +813,18 @@ export function KegiatanPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => void downloadAttendanceReport(a)}
-                          disabled={reportingAgendaId === a.id}
-                          aria-label={`Unduh laporan kehadiran ${a.title}`}
-                        >
-                          <Download className="h-4 w-4" />
-                          <span className="hidden sm:inline">{reportingAgendaId === a.id ? "Membuat..." : "PDF"}</span>
-                        </Button>
+                        {isAdminOrPengurus ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => void downloadAttendanceReport(a)}
+                            disabled={reportingAgendaId === a.id}
+                            aria-label={`Unduh laporan kehadiran ${a.title}`}
+                          >
+                            <Download className="h-4 w-4" />
+                            <span className="hidden sm:inline">{reportingAgendaId === a.id ? "Membuat..." : "PDF"}</span>
+                          </Button>
+                        ) : null}
                         <Badge variant="default">Selesai</Badge>
                       </div>
                     </div>
