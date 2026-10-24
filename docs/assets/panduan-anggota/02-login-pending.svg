@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Ilustrasi alur masuk dan menunggu persetujuan</title>
+  <desc id="desc">Tampilan beranda dengan tombol Masuk, lalu kartu status menunggu persetujuan admin.</desc>
+  <defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#101a32"/><stop offset="1" stop-color="#28204d"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#071126" flood-opacity=".2"/></filter></defs>
+  <rect width="1200" height="680" fill="#f3f6fb"/>
+  <rect x="34" y="30" width="1132" height="620" rx="28" fill="white" filter="url(#shadow)"/>
+  <rect x="34" y="30" width="1132" height="76" rx="28" fill="#172239"/>
+  <circle cx="78" cy="68" r="20" fill="#2f6be0"/><text x="78" y="75" text-anchor="middle" font-family="Arial" font-size="18" font-weight="700" fill="white">M</text>
+  <text x="112" y="65" font-family="Arial" font-size="19" font-weight="700" fill="white">MGMP Matematika</text><text x="112" y="85" font-family="Arial" font-size="12" fill="#a8b6cf">SMK Kab. Lumajang</text>
+  <text x="940" y="72" font-family="Arial" font-size="15" font-weight="700" fill="#cbd5e1">Beranda</text>
+  <rect x="92" y="150" width="1016" height="230" rx="22" fill="url(#bg)"/>
+  <text x="126" y="194" font-family="Arial" font-size="14" font-weight="700" fill="#b7c3d8">MGMP Matematika</text>
+  <text x="126" y="242" font-family="Arial" font-size="35" font-weight="800" fill="white">Wadah kolaborasi, berbagi,</text><text x="126" y="284" font-family="Arial" font-size="35" font-weight="800" fill="white">dan berkembang bersama.</text>
+  <text x="126" y="325" font-family="Arial" font-size="15" fill="#b7c3d8">Masuk dengan akun Google untuk memulai perjalanan anggota.</text>
+  <rect x="126" y="344" width="135" height="38" rx="10" fill="#2563eb"/><text x="194" y="369" text-anchor="middle" font-family="Arial" font-size="15" font-weight="700" fill="white">Masuk  →</text>
+  <rect x="92" y="412" width="1016" height="178" rx="18" fill="#f8fafc" stroke="#dbe5f3"/>
+  <circle cx="140" cy="460" r="22" fill="#fef3c7"/><text x="140" y="467" text-anchor="middle" font-family="Arial" font-size="22">!</text>
+  <text x="180" y="455" font-family="Arial" font-size="20" font-weight="800" fill="#17213b">Menunggu persetujuan admin</text>
+  <text x="180" y="482" font-family="Arial" font-size="15" fill="#64748b">Profil sudah dikirim. Admin/pengurus akan memeriksa data sebelum akses anggota aktif dibuka.</text>
+  <rect x="180" y="510" width="220" height="32" rx="16" fill="#fef3c7"/><text x="290" y="531" text-anchor="middle" font-family="Arial" font-size="13" font-weight="700" fill="#92400e">Status: pending</text>
+  <text x="92" y="625" font-family="Arial" font-size="12" fill="#64748b">ILUSTRASI ALUR — layar status dapat berbeda sesuai data akun.</text>
+</svg>
