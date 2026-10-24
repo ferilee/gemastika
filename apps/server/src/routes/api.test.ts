@@ -246,6 +246,27 @@ describe("api endpoints", () => {
     ).toBe(200);
   });
 
+  it("school search returns all vocational schools from Lumajang only", async () => {
+    const response = await app.request("http://local/api/schools?q=SMKN%201%20Tempeh");
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { items: Array<{ name: string; city: string; province: string; status: string }> };
+    expect(payload.items.some((item) => item.name.toLowerCase().includes("smkn 1 tempeh"))).toBe(true);
+    expect(payload.items).toHaveLength(1);
+    expect(payload.items.every((item) => item.city.toLowerCase().includes("lumajang"))).toBe(true);
+    expect(payload.items.every((item) => item.name.toLowerCase().includes("smk"))).toBe(true);
+
+    const allSchools = await app.request("http://local/api/schools?q=SMK");
+    const allPayload = (await allSchools.json()) as { items: Array<{ city: string; status: string }> };
+    expect(allPayload.items).toHaveLength(39);
+    expect(allPayload.items.every((item) => item.city === "Kab. Lumajang")).toBe(true);
+    expect(allPayload.items.some((item) => item.status === "Negeri")).toBe(true);
+    expect(allPayload.items.some((item) => item.status === "Swasta")).toBe(true);
+
+    const outsideLumajang = await app.request("http://local/api/schools?q=SMK%201%20Bandung");
+    const outsidePayload = (await outsideLumajang.json()) as { items: unknown[] };
+    expect(outsidePayload.items).toHaveLength(0);
+  });
+
   it("agenda + board endpoints", async () => {
     expect((await app.request("http://local/api/agendas")).status).toBe(200);
     expect((await app.request("http://local/api/board")).status).toBe(200);

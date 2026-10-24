@@ -15,6 +15,7 @@ type SchoolItem = {
   name: string;
   city: string;
   province: string;
+  status?: "Negeri" | "Swasta";
 };
 
 function FloatingField({
@@ -206,7 +207,7 @@ export function ProfileOnboardingModal() {
                     }}
                   >
                     <div className="text-sm font-bold text-slate-800 dark:text-slate-100">{s.name}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">{[s.city, s.province].filter(Boolean).join(", ")}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">{[s.status, s.city, s.province].filter(Boolean).join(" · ")}</div>
                   </button>
                 ))}
               </div>

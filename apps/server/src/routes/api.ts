@@ -34,13 +34,12 @@ import { checkLearningResourceLink } from "../services/linkAudit";
 import { getErrorMessage } from "../services/errorMessage";
 import { publishRealtimeEvent, subscribeRealtimeEvents } from "../services/realtimeEvents";
 import { streamSSE } from "hono/streaming";
+import { LUMAJANG_VOCATIONAL_SCHOOLS, type SchoolItem } from "../data/lumajang-schools";
 
 const ROLE_VALUES = ["admin", "pengurus", "anggota"] as const;
 type RoleValue = (typeof ROLE_VALUES)[number];
 const MEMBERSHIP_VALUES = ["pending", "approved", "rejected"] as const;
 type MembershipStatus = (typeof MEMBERSHIP_VALUES)[number];
-type SchoolItem = { name: string; city: string; province: string };
-const SCHOOL_CACHE_TTL_MS = 1000 * 60 * 30;
 const ATTENDANCE_XP_DEFAULT = 10;
 const PUBLISH_VALUES = ["pending", "approved", "rejected"] as const;
 type PublishStatus = (typeof PUBLISH_VALUES)[number];
@@ -64,36 +63,11 @@ const learningResourcePayload = z.object({
   thumbnailStorageKey: z.string().trim().max(500).default(""),
   changeNote: z.string().trim().max(500).default("")
 });
-const schoolCache = new Map<string, { expiresAt: number; items: SchoolItem[] }>();
-const SCHOOL_FALLBACK: SchoolItem[] = [
-  { name: "SMK Negeri 1 Lumajang", city: "Kab. Lumajang", province: "Jawa Timur" },
-  { name: "SMK Negeri 2 Lumajang", city: "Kab. Lumajang", province: "Jawa Timur" },
-  { name: "SMK Negeri Pasirian", city: "Kab. Lumajang", province: "Jawa Timur" },
-  { name: "SMK Negeri 1 Jember", city: "Kab. Jember", province: "Jawa Timur" },
-  { name: "SMK Negeri 1 Malang", city: "Kota Malang", province: "Jawa Timur" },
-  { name: "SMK Negeri 2 Surabaya", city: "Kota Surabaya", province: "Jawa Timur" },
-  { name: "SMK Negeri 1 Bandung", city: "Kota Bandung", province: "Jawa Barat" },
-  { name: "SMK Negeri 1 Jakarta", city: "Kota Jakarta Pusat", province: "DKI Jakarta" },
-  { name: "SMK Negeri Pasirian", city: "Kab. Lumajang", province: "Jawa Timur" },
-  { name: "SMK Negeri Klakah", city: "Kab. Lumajang", province: "Jawa Timur" },
-  { name: "SMK Muhammadiyah Lumajang", city: "Kab. Lumajang", province: "Jawa Timur" },
-  { name: "SMK Negeri 3 Malang", city: "Kota Malang", province: "Jawa Timur" },
-  { name: "SMK Negeri 4 Malang", city: "Kota Malang", province: "Jawa Timur" },
-  { name: "SMK Negeri 1 Kediri", city: "Kota Kediri", province: "Jawa Timur" },
-  { name: "SMK Negeri 2 Kediri", city: "Kota Kediri", province: "Jawa Timur" },
-  { name: "SMK Negeri 1 Jombang", city: "Kab. Jombang", province: "Jawa Timur" },
-  { name: "SMK Negeri 1 Sidoarjo", city: "Kab. Sidoarjo", province: "Jawa Timur" },
-  { name: "SMK Negeri 2 Sidoarjo", city: "Kab. Sidoarjo", province: "Jawa Timur" },
-  { name: "SMK Negeri 1 Gresik", city: "Kab. Gresik", province: "Jawa Timur" },
-  { name: "SMK Negeri 1 Banyuwangi", city: "Kab. Banyuwangi", province: "Jawa Timur" }
-];
-
 function normalizeSchoolText(raw: string) {
   return raw
     .toLowerCase()
     .replace(/\bsmkn\b/g, "smk negeri")
     .replace(/\bsmks\b/g, "smk swasta")
-    .replace(/\bsman\b/g, "sma negeri")
     .replace(/\bsman\b/g, "sma negeri")
     .replace(/\bsmpn\b/g, "smp negeri")
     .replace(/\bsd n\b/g, "sd negeri")
@@ -103,7 +77,7 @@ function normalizeSchoolText(raw: string) {
 }
 
 function scoreSchool(item: SchoolItem, query: string) {
-  const searchable = normalizeSchoolText([item.name, item.city, item.province].join(" "));
+  const searchable = normalizeSchoolText([item.name, item.status, item.city, item.province].join(" "));
   const q = normalizeSchoolText(query);
   if (!q) return 0;
   const tokens = q.split(" ").filter(Boolean);
@@ -116,6 +90,7 @@ function scoreSchool(item: SchoolItem, query: string) {
     if (normalizeSchoolText(item.name).includes(token)) score += 14;
     if (normalizeSchoolText(item.city).includes(token)) score += 10;
     if (normalizeSchoolText(item.province).includes(token)) score += 8;
+    if (normalizeSchoolText(item.status).includes(token)) score += 12;
   }
   // Prefer SMK for MGMP Matematika SMK context.
   if (normalizeSchoolText(item.name).includes("smk")) score += 6;
@@ -131,12 +106,17 @@ function rankSchools(items: SchoolItem[], query: string) {
     seen.add(key);
     deduped.push(item);
   }
+  const meaningfulTokens = normalizeSchoolText(query).split(" ").filter((token) => token && token !== "smk");
   return deduped
     .map((item) => ({ item, score: scoreSchool(item, query) }))
-    .filter((row) => row.score > 0)
+    .filter((row) => {
+      if (row.score <= 0) return false;
+      const searchable = normalizeSchoolText([row.item.name, row.item.status, row.item.city, row.item.province].join(" "));
+      return meaningfulTokens.every((token) => searchable.includes(token));
+    })
     .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name))
     .map((row) => row.item)
-    .slice(0, 25);
+    .slice(0, 50);
 }
 
 function parseRoles(raw: string): RoleValue[] {
@@ -198,10 +178,6 @@ function shuffleForDay<T>(items: T[], day: string) {
     [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
   }
   return shuffled;
-}
-
-function filterFallbackSchools(query: string) {
-  return rankSchools(SCHOOL_FALLBACK, query);
 }
 
 function normalizeWa(raw: string) {
@@ -1004,37 +980,7 @@ export function apiRouter(db: Db) {
   api.get("/schools", async (c) => {
     const q = (c.req.query("q") || "").trim();
     if (q.length < 2) return c.json({ items: [] });
-    const cacheKey = q.toLowerCase();
-    const now = Date.now();
-    const fromCache = schoolCache.get(cacheKey);
-    if (fromCache && fromCache.expiresAt > now) return c.json({ items: fromCache.items, source: "cache" });
-
-    try {
-      const res = await fetch(`https://api-sekolah-indonesia.vercel.app/sekolah?q=${encodeURIComponent(q)}`);
-      if (!res.ok) {
-        const fallback = filterFallbackSchools(q);
-        return c.json({ items: fallback, source: "fallback" });
-      }
-      const json = (await res.json()) as {
-        dataSekolah?: Array<{ sekolah?: string; kabupaten_kota?: string; propinsi?: string }>;
-      };
-      const items = (json.dataSekolah || [])
-        .map((s) => ({
-          name: (s.sekolah || "").trim(),
-          city: (s.kabupaten_kota || "").trim(),
-          province: (s.propinsi || "").trim()
-        }))
-        .filter((s) => s.name.length > 0)
-        .slice(0, 20);
-      const rankedRemote = rankSchools(items, q);
-      const rankedFallback = filterFallbackSchools(q);
-      const finalItems = [...rankedRemote, ...rankedFallback].slice(0, 25);
-      schoolCache.set(cacheKey, { expiresAt: now + SCHOOL_CACHE_TTL_MS, items: finalItems });
-      return c.json({ items: finalItems, source: rankedRemote.length ? "remote+ranked" : "fallback" });
-    } catch {
-      const fallback = filterFallbackSchools(q);
-      return c.json({ items: fallback, source: "fallback" });
-    }
+    return c.json({ items: rankSchools(LUMAJANG_VOCATIONAL_SCHOOLS, q), source: "lumajang-directory" });
   });
 
   api.get("/agendas", async (c) => {
