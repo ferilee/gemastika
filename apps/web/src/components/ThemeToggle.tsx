@@ -6,8 +6,8 @@ function getInitialDark(): boolean {
   const saved = localStorage.getItem("theme");
   if (saved === "dark") return true;
   if (saved === "light") return false;
-  // Default ke tema gelap agar tampilan konsisten seperti desain.
-  return true;
+  // Default ke tema terang.
+  return false;
 }
 
 export function ThemeToggle() {
