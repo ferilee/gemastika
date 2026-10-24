@@ -61,6 +61,7 @@ export function DashboardAdminPage() {
   const [savingId, setSavingId] = useState<number | null>(null);
   const [board, setBoard] = useState<Array<{ memberId: number; title: string; contact: string }>>([{ memberId: 0, title: "", contact: "" }]);
   const [savingBoard, setSavingBoard] = useState(false);
+  const [boardMemberQuery, setBoardMemberQuery] = useState("");
   const [quickLinks, setQuickLinks] = useState<Array<{ title: string; subtitle: string; href: string }>>([{ title: "", subtitle: "", href: "/" }]);
   const [quoteText, setQuoteText] = useState("");
   const [quoteAuthor, setQuoteAuthor] = useState("");
@@ -88,6 +89,17 @@ export function DashboardAdminPage() {
       return okSearch && okFilter;
     });
   }, [memberFilter, members, q]);
+
+  const boardMembers = useMemo(() => {
+    const query = boardMemberQuery.trim().toLowerCase();
+    const selectedIds = new Set(board.map((item) => item.memberId).filter(Boolean));
+    return members.filter((member) => {
+      const roles = member.roles?.length ? member.roles : [member.role];
+      const eligible = roles.includes("anggota") || roles.includes("pengurus") || selectedIds.has(member.id);
+      const searchable = `${member.name} ${member.email} ${member.school}`.toLowerCase();
+      return eligible && (!query || searchable.includes(query));
+    });
+  }, [board, boardMemberQuery, members]);
 
   async function toggleRole(member: Member, role: MemberRole) {
     const roles = nextRoles(member.roles || [], role);
@@ -481,6 +493,8 @@ export function DashboardAdminPage() {
             <CardTitle className="text-mgmp-blue dark:text-white">Susunan Pengurus</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            <Input value={boardMemberQuery} onChange={(event) => setBoardMemberQuery(event.target.value)} placeholder="Cari anggota/pengurus berdasarkan nama, email, atau sekolah..." disabled={savingBoard} />
+            <div className="text-xs text-slate-500 dark:text-slate-400">Menampilkan {boardMembers.length} pengguna yang dapat dipilih.</div>
             {board.map((item, index) => (
               <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
                 <Select
@@ -498,9 +512,9 @@ export function DashboardAdminPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="0">Pilih anggota</SelectItem>
-                    {members.map((m) => (
+                    {boardMembers.map((m) => (
                       <SelectItem key={m.id} value={String(m.id)}>
-                        {m.name}
+                        {m.name}{m.school ? ` · ${m.school}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
