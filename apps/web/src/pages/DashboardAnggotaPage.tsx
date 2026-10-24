@@ -105,6 +105,8 @@ export function DashboardAnggotaPage() {
   const [portfolioForm, setPortfolioForm] = useState({ teacherName: "", school: "", title: "", description: "", link: "", photoUrl: "" });
   const [newsForm, setNewsForm] = useState({ title: "", category: "Kegiatan", author: "", date: new Date().toISOString().slice(0, 10), imageUrl: "", summary: "", content: "", documentUrl: "" });
   const [learningForm, setLearningForm] = useState({ title: "", category: "RPP / Modul Ajar" as (typeof learningCategories)[number], description: "", phase: "Fase E", grade: "", topic: "", semester: "", curriculum: "Kurikulum Merdeka", resourceUrl: "", tags: "", changeNote: "" });
+  const [learningFile, setLearningFile] = useState<File | null>(null);
+  const [learningUploadMessage, setLearningUploadMessage] = useState("");
   const storageKey = `mgmp-dashboard-step:${user?.email || user?.sub || "guest"}`;
 
   const memberEmail = (user?.email || "").trim().toLowerCase();
@@ -160,7 +162,25 @@ export function DashboardAnggotaPage() {
 
   function openLearningModal() {
     setLearningForm({ title: "", category: "RPP / Modul Ajar", description: "", phase: "Fase E", grade: "", topic: "", semester: "", curriculum: "Kurikulum Merdeka", resourceUrl: "", tags: "", changeNote: "" });
+    setLearningFile(null);
+    setLearningUploadMessage("");
     setOpenModal("learning");
+  }
+
+  async function chooseLearningFile(file: File) {
+    if (file.type.toLowerCase() !== "application/pdf" || !file.name.toLowerCase().endsWith(".pdf")) {
+      setLearningFile(null);
+      setLearningUploadMessage("Materi hanya boleh berupa file PDF.");
+      return;
+    }
+    const signature = new TextDecoder().decode(new Uint8Array(await file.slice(0, 5).arrayBuffer()));
+    if (signature !== "%PDF-") {
+      setLearningFile(null);
+      setLearningUploadMessage("Isi file tidak terdeteksi sebagai PDF yang valid.");
+      return;
+    }
+    setLearningFile(file);
+    setLearningUploadMessage(`${file.name} siap dikirim.`);
   }
 
   async function saveProfile() {
@@ -206,9 +226,19 @@ export function DashboardAnggotaPage() {
   }
 
   async function saveLearningResource() {
+    if (!learningFile) {
+      alert("Pilih file PDF terlebih dahulu.");
+      return;
+    }
     setSavingForm(true);
     try {
-      await api("/api/learning-resources", { method: "POST", body: JSON.stringify({ ...learningForm, sourceType: "link", resourceUrl: learningForm.resourceUrl, fileName: "", thumbnailUrl: "", storageKey: "", thumbnailStorageKey: "" }) });
+      const uploadBody = new FormData();
+      uploadBody.append("file", learningFile);
+      const uploadResponse = await fetch("/api/uploads/resource", { method: "POST", body: uploadBody, credentials: "include" });
+      const uploadRaw = await uploadResponse.text();
+      const uploadResult = JSON.parse(uploadRaw) as { url?: string; fileName?: string; key?: string; error?: string };
+      if (!uploadResponse.ok || !uploadResult.url || !uploadResult.key) throw new Error(uploadResult.error || "Gagal mengunggah PDF.");
+      await api("/api/learning-resources", { method: "POST", body: JSON.stringify({ ...learningForm, sourceType: "file", resourceUrl: uploadResult.url, fileName: uploadResult.fileName || learningFile.name, thumbnailUrl: "", storageKey: uploadResult.key, thumbnailStorageKey: "" }) });
       setOpenModal(null);
       alert("Materi dikirim dan menunggu pemeriksaan pengurus.");
     } catch (error) {
@@ -350,7 +380,7 @@ export function DashboardAnggotaPage() {
             <div className="mt-8 hidden rounded-2xl border border-blue-100 bg-blue-50/80 p-4 dark:border-blue-400/20 dark:bg-blue-500/10 lg:block">
               <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-mgmp-primary dark:text-blue-300">Tahukah Anda?</div>
               <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">{knowledgeNote}</p>
-              <button type="button" onClick={() => setOpenModal("learning")} className="mt-3 inline-flex items-center gap-1 text-xs font-extrabold text-mgmp-primary hover:underline dark:text-blue-300">Jelajahi Bank Pembelajaran <ArrowRight className="h-3.5 w-3.5" /></button>
+              <Link to="/bank-pembelajaran" className="mt-3 inline-flex items-center gap-1 text-xs font-extrabold text-mgmp-primary hover:underline dark:text-blue-300">Jelajahi Bank Pembelajaran <ArrowRight className="h-3.5 w-3.5" /></Link>
             </div>
           </aside>
 
@@ -547,7 +577,17 @@ export function DashboardAnggotaPage() {
           {openModal === "learning" ? (
             <>
               <DialogHeader><DialogTitle>Bank Pembelajaran</DialogTitle><DialogDescription>Ruang berbagi modul ajar dan praktik baik untuk anggota MGMP.</DialogDescription></DialogHeader>
-              <form className="space-y-3 px-6 pb-6" onSubmit={(event) => { event.preventDefault(); void saveLearningResource(); }}><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 dark:border-blue-400/20 dark:bg-blue-500/10"><BookOpen className="h-6 w-6 text-mgmp-primary dark:text-blue-300" /><div className="mt-3 font-extrabold text-slate-900 dark:text-white">Bagikan materi</div><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Isi informasi materi dan tautan yang dapat dibuka oleh anggota MGMP. Kiriman akan diperiksa sebelum dipublikasikan.</p></div><input required minLength={3} value={learningForm.title} onChange={(event) => setLearningForm((form) => ({ ...form, title: event.target.value }))} placeholder="Judul materi" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><div className="grid gap-3 sm:grid-cols-2"><select value={learningForm.category} onChange={(event) => setLearningForm((form) => ({ ...form, category: event.target.value as (typeof learningCategories)[number] }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white">{learningCategories.map((category) => <option key={category}>{category}</option>)}</select><input required value={learningForm.phase} onChange={(event) => setLearningForm((form) => ({ ...form, phase: event.target.value }))} placeholder="Fase" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div><div className="grid gap-3 sm:grid-cols-2"><input required value={learningForm.grade} onChange={(event) => setLearningForm((form) => ({ ...form, grade: event.target.value }))} placeholder="Kelas" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input required minLength={2} value={learningForm.topic} onChange={(event) => setLearningForm((form) => ({ ...form, topic: event.target.value }))} placeholder="Topik" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div><textarea required minLength={10} value={learningForm.description} onChange={(event) => setLearningForm((form) => ({ ...form, description: event.target.value }))} placeholder="Deskripsi materi" rows={4} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input required type="url" value={learningForm.resourceUrl} onChange={(event) => setLearningForm((form) => ({ ...form, resourceUrl: event.target.value }))} placeholder="Tautan materi (https://...)" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><div className="grid gap-3 sm:grid-cols-2"><input required value={learningForm.semester} onChange={(event) => setLearningForm((form) => ({ ...form, semester: event.target.value }))} placeholder="Semester" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input value={learningForm.tags} onChange={(event) => setLearningForm((form) => ({ ...form, tags: event.target.value }))} placeholder="Tag, pisahkan dengan koma" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div><Button type="submit" className="w-full font-extrabold" disabled={savingForm}>{savingForm ? "Mengirim..." : "Kirim materi"}</Button></form>
+              <form className="space-y-3 px-6 pb-6" onSubmit={(event) => { event.preventDefault(); void saveLearningResource(); }}>
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 dark:border-blue-400/20 dark:bg-blue-500/10"><BookOpen className="h-6 w-6 text-mgmp-primary dark:text-blue-300" /><div className="mt-3 font-extrabold text-slate-900 dark:text-white">Bagikan materi PDF</div><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Unggah satu file PDF. Kiriman akan diperiksa sebelum dipublikasikan.</p></div>
+                <input required type="file" accept=".pdf,application/pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) void chooseLearningFile(file); }} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" />
+                {learningUploadMessage ? <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800 dark:border-blue-400/20 dark:bg-blue-500/10 dark:text-blue-100">{learningUploadMessage}</div> : null}
+                <input required minLength={3} value={learningForm.title} onChange={(event) => setLearningForm((form) => ({ ...form, title: event.target.value }))} placeholder="Judul materi" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" />
+                <div className="grid gap-3 sm:grid-cols-2"><select value={learningForm.category} onChange={(event) => setLearningForm((form) => ({ ...form, category: event.target.value as (typeof learningCategories)[number] }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white">{learningCategories.map((category) => <option key={category}>{category}</option>)}</select><input required value={learningForm.phase} onChange={(event) => setLearningForm((form) => ({ ...form, phase: event.target.value }))} placeholder="Fase" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div>
+                <div className="grid gap-3 sm:grid-cols-2"><input required value={learningForm.grade} onChange={(event) => setLearningForm((form) => ({ ...form, grade: event.target.value }))} placeholder="Kelas" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input required minLength={2} value={learningForm.topic} onChange={(event) => setLearningForm((form) => ({ ...form, topic: event.target.value }))} placeholder="Topik" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div>
+                <textarea required minLength={10} value={learningForm.description} onChange={(event) => setLearningForm((form) => ({ ...form, description: event.target.value }))} placeholder="Deskripsi materi" rows={4} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" />
+                <div className="grid gap-3 sm:grid-cols-2"><input required value={learningForm.semester} onChange={(event) => setLearningForm((form) => ({ ...form, semester: event.target.value }))} placeholder="Semester" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /><input value={learningForm.tags} onChange={(event) => setLearningForm((form) => ({ ...form, tags: event.target.value }))} placeholder="Tag, pisahkan dengan koma" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/5 dark:text-white" /></div>
+                <Button type="submit" className="w-full font-extrabold" disabled={savingForm || !learningFile}>{savingForm ? "Mengirim..." : "Kirim materi PDF"}</Button>
+              </form>
             </>
           ) : null}
 

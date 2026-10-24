@@ -45,7 +45,6 @@ const ATTENDANCE_XP_DEFAULT = 10;
 const PUBLISH_VALUES = ["pending", "approved", "rejected"] as const;
 type PublishStatus = (typeof PUBLISH_VALUES)[number];
 const LEARNING_RESOURCE_CATEGORIES = ["RPP / Modul Ajar", "Materi Pembelajaran", "Asesmen Interaktif", "LKPD Interaktif", "Bank Soal", "Media Pembelajaran", "Praktik Baik", "Perangkat Administrasi"] as const;
-const RESOURCE_SOURCE_TYPES = ["file", "link"] as const;
 const REPORT_STATUS_VALUES = ["open", "resolved", "dismissed"] as const;
 const learningResourcePayload = z.object({
   title: z.string().trim().min(3).max(180),
@@ -56,12 +55,12 @@ const learningResourcePayload = z.object({
   topic: z.string().trim().min(2).max(120),
   semester: z.string().trim().min(1).max(30),
   curriculum: z.string().trim().min(2).max(80),
-  sourceType: z.enum(RESOURCE_SOURCE_TYPES),
+  sourceType: z.literal("file"),
   resourceUrl: z.string().url(),
-  fileName: z.string().trim().max(255).default(""),
+  fileName: z.string().trim().min(1).max(255).refine((value) => value.toLowerCase().endsWith(".pdf"), "File materi harus berformat PDF."),
   thumbnailUrl: z.string().url().or(z.literal("")).default(""),
   tags: z.string().trim().max(500).default(""),
-  storageKey: z.string().trim().max(500).default(""),
+  storageKey: z.string().trim().min(1).max(500).refine((value) => value.startsWith("bank-pembelajaran/"), "File materi harus berasal dari unggahan PDF."),
   thumbnailStorageKey: z.string().trim().max(500).default(""),
   changeNote: z.string().trim().max(500).default("")
 });
@@ -240,17 +239,8 @@ function guessExt(contentType: string) {
 }
 
 function resourceFileExt(file: File) {
-  const fromName = file.name.trim().toLowerCase().match(/\.([a-z0-9]{1,8})$/)?.[1] || "";
-  if (["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx"].includes(fromName)) return fromName;
-  const contentType = file.type.toLowerCase();
-  if (contentType.includes("pdf")) return "pdf";
-  if (contentType.includes("wordprocessingml")) return "docx";
-  if (contentType.includes("msword")) return "doc";
-  if (contentType.includes("presentationml")) return "pptx";
-  if (contentType.includes("powerpoint")) return "ppt";
-  if (contentType.includes("spreadsheetml")) return "xlsx";
-  if (contentType.includes("excel")) return "xls";
-  return "";
+  const fromName = file.name.trim().toLowerCase();
+  return file.type.toLowerCase() === "application/pdf" && fromName.endsWith(".pdf") ? "pdf" : "";
 }
 
 const RUSTFS_CHECK_TIMEOUT_MS = 30000;
@@ -397,8 +387,11 @@ export function apiRouter(db: Db) {
     const file = Array.isArray(fileLike) ? fileLike[0] : fileLike;
     if (!(file instanceof File)) return c.json({ error: "File materi tidak ditemukan." }, 400);
     const ext = resourceFileExt(file);
-    if (!ext) return c.json({ error: "Format file harus PDF, DOCX, PPTX, XLSX, DOC, PPT, atau XLS." }, 400);
+    if (!ext) return c.json({ error: "Materi hanya boleh berupa file PDF." }, 400);
     if (file.size > 20 * 1024 * 1024) return c.json({ error: "Ukuran file maksimal 20MB." }, 400);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const signature = new TextDecoder().decode(bytes.slice(0, 5));
+    if (signature !== "%PDF-") return c.json({ error: "Isi file tidak terdeteksi sebagai PDF yang valid." }, 400);
 
     const now = new Date();
     const key = `bank-pembelajaran/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${crypto.randomUUID()}.${ext}`;
@@ -412,9 +405,8 @@ export function apiRouter(db: Db) {
     });
 
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
       await Promise.race([
-        s3.file(key).write(bytes, { type: file.type || "application/octet-stream" }),
+        s3.file(key).write(bytes, { type: "application/pdf" }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timeout ke RustFS.")), RUSTFS_UPLOAD_TIMEOUT_MS))
       ]);
     } catch (err) {
@@ -1906,6 +1898,7 @@ export function apiRouter(db: Db) {
     if (!isReviewer(roles) && resource.createdByEmail.trim().toLowerCase() !== email) return c.json({ error: "Hanya kontributor atau reviewer yang dapat memulihkan versi." }, 403);
     const version = await db.select().from(learningResourceVersions).where(and(eq(learningResourceVersions.id, Number(c.req.param("versionId"))), eq(learningResourceVersions.resourceId, id))).get();
     if (!version) return c.json({ error: "Versi tidak ditemukan." }, 404);
+    if (!version.fileName.toLowerCase().endsWith(".pdf") || !version.storageKey.startsWith("bank-pembelajaran/")) return c.json({ error: "Versi materi harus berupa PDF yang diunggah." }, 400);
     const latest = await db.select({ version: learningResourceVersions.version }).from(learningResourceVersions).where(eq(learningResourceVersions.resourceId, id)).orderBy(desc(learningResourceVersions.version)).get();
     await db.update(learningResources).set({ resourceUrl: version.resourceUrl, fileName: version.fileName, storageKey: version.storageKey, publishStatus: "pending", reviewedBy: "", reviewedAt: "", reviewNote: "" }).where(eq(learningResources.id, id));
     await db.insert(learningResourceVersions).values({ resourceId: id, version: (latest?.version || 0) + 1, resourceUrl: version.resourceUrl, fileName: version.fileName, storageKey: version.storageKey, changeNote: `Dipulihkan dari versi ${version.version}`, createdByEmail: email || resource.createdByEmail });
