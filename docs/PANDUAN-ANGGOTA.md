@@ -2,7 +2,7 @@
 
 Panduan ini menjelaskan alur penggunaan Gemastika sebagai anggota: masuk dengan Google, melengkapi profil, menunggu persetujuan admin, mengisi daftar hadir kegiatan, dan mengirim kontribusi.
 
-> **Catatan gambar:** gambar berformat PNG adalah tangkapan layar dari aplikasi lokal. Gambar berformat SVG yang diberi label **Ilustrasi alur** menggambarkan layar khusus anggota yang memerlukan sesi login aktif.
+> **Catatan gambar:** tangkapan layar berformat PNG diambil dari `https://gemastika.or.id/`. Gambar berformat SVG yang diberi label **Ilustrasi alur** menggambarkan layar khusus anggota yang memerlukan sesi login aktif.
 
 ## Ringkasan alur
 
@@ -20,14 +20,14 @@ flowchart LR
 
 ## 1. Masuk sebagai anggota
 
-1. Buka alamat Gemastika. Saat mengembangkan aplikasi di komputer sendiri, alamatnya biasanya `http://localhost:5173`.
+1. Buka alamat resmi Gemastika: [`https://gemastika.or.id/`](https://gemastika.or.id/).
 2. Pada beranda, klik **Masuk**.
 3. Pilih akun Google yang akan digunakan sebagai akun anggota.
 4. Berikan persetujuan yang diminta oleh Google.
 5. Jika ini pertama kali masuk, lengkapi profil anggota. Isi nama lengkap, sekolah, dan minimal salah satu kontak: WhatsApp atau Telegram.
 6. Simpan profil.
 
-![Beranda Gemastika dengan tombol Masuk](assets/panduan-anggota/01-beranda-publik.png)
+![Beranda Gemastika produksi dengan tombol Masuk](assets/panduan-anggota/01-beranda-publik.png)
 
 Jika muncul `redirect_uri_mismatch`, alamat callback Google OAuth pada server belum sama dengan alamat aplikasi. Hubungi admin/pengelola aplikasi; masalah ini tidak dapat diselesaikan dari halaman anggota.
 
@@ -99,7 +99,7 @@ Buka langkah **Kontribusi**, lalu pilih salah satu kartu. Setiap kiriman masuk k
 5. Tambahkan tautan karya atau foto jika tersedia.
 6. Klik **Kirim untuk ditinjau**.
 
-![Formulir kontribusi anggota](assets/panduan-anggota/04-presensi-kontribusi.svg)
+![Modal tambah portofolio](assets/panduan-anggota/07-form-portofolio.svg)
 
 Portofolio akan berstatus menunggu pemeriksaan. Jika disetujui, karya dapat dilihat pada halaman publik **Portofolio**.
 
@@ -114,6 +114,8 @@ Portofolio akan berstatus menunggu pemeriksaan. Jika disetujui, karya dapat dili
 Berita dikirim ke pengurus untuk diperiksa. Berita yang belum disetujui tetap menjadi kiriman Anda dan belum tampil sebagai konten publik.
 
 Halaman publik Berita dapat dibuka untuk membaca berita yang sudah tersedia. Pengguna umum hanya dapat membaca; tombol untuk menulis berita tidak tampil bagi pengguna yang belum masuk sebagai anggota aktif.
+
+![Modal tulis berita](assets/panduan-anggota/08-form-berita.svg)
 
 ![Halaman Berita publik](assets/panduan-anggota/07-berita-publik.png)
 

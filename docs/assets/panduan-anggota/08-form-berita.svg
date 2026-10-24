@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="700" viewBox="0 0 1100 700" role="img" aria-labelledby="title desc">
+  <title id="title">Ilustrasi modal tulis berita</title>
+  <desc id="desc">Formulir berita anggota dengan judul, kategori, tanggal, ringkasan, isi, dan tombol kirim.</desc>
+  <rect width="1100" height="700" fill="#eef2f8"/>
+  <rect x="80" y="25" width="940" height="650" rx="22" fill="white" stroke="#dbe5f3"/>
+  <g font-family="Arial">
+    <text x="112" y="76" font-size="25" font-weight="800" fill="#151a38">Berita yang dibagikan</text>
+    <text x="112" y="103" font-size="15" fill="#64748b">Informasi dan kegiatan yang dibuat menggunakan akun ini.</text>
+    <text x="550" y="160" text-anchor="middle" font-size="15" fill="#71809b">Belum ada berita yang dibagikan.</text>
+    <rect x="112" y="202" width="876" height="424" rx="18" fill="#f4f8ff" stroke="#cfe0ff"/>
+    <text x="138" y="242" font-size="15" font-weight="800" fill="#1e293b">Tulis berita</text>
+    <rect x="138" y="262" width="390" height="42" rx="10" fill="white" stroke="#cbd5e1"/><text x="154" y="289" font-size="14" fill="#94a3b8">Judul berita</text>
+    <rect x="546" y="262" width="416" height="42" rx="10" fill="white" stroke="#cbd5e1"/><text x="562" y="289" font-size="14" fill="#334155">Kegiatan</text>
+    <rect x="138" y="320" width="390" height="42" rx="10" fill="white" stroke="#cbd5e1"/><text x="154" y="347" font-size="14" fill="#334155">24/10/2026</text>
+    <rect x="546" y="320" width="416" height="42" rx="10" fill="white" stroke="#cbd5e1"/><text x="562" y="347" font-size="14" fill="#94a3b8">Tautan gambar (opsional)</text>
+    <rect x="138" y="378" width="824" height="42" rx="10" fill="white" stroke="#cbd5e1"/><text x="154" y="405" font-size="14" fill="#94a3b8">Ringkasan berita</text>
+    <rect x="138" y="436" width="824" height="92" rx="10" fill="white" stroke="#cbd5e1"/><text x="154" y="463" font-size="14" fill="#94a3b8">Isi berita</text>
+    <rect x="138" y="538" width="824" height="42" rx="10" fill="white" stroke="#cbd5e1"/><text x="154" y="565" font-size="14" fill="#94a3b8">Tautan dokumen (opsional)</text>
+    <rect x="138" y="592" width="824" height="42" rx="10" fill="#5b00e8"/><text x="550" y="619" text-anchor="middle" font-size="15" font-weight="700" fill="white">Kirim berita</text>
+  </g>
+</svg>
